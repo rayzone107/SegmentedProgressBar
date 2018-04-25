@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="com.rachitgoyal.segmentedprogressbar.MainActivity">
+
+    <TextView
+        android:id="@+id/title"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_marginBottom="10dp"
+        android:layout_marginTop="10dp"
+        android:text="Sample Usage"
+        android:textColor="@android:color/black"
+        android:textSize="20sp" />
+
+    <com.rachitgoyal.segmented.SegmentedProgressBar
+        android:id="@+id/segmented_pb_1"
+        android:layout_width="wrap_content"
+        android:layout_height="30dp"
+        android:layout_below="@id/title"
+        android:layout_centerHorizontal="true"
+        android:layout_margin="10dp"
+        app:cornerRadius="4dp"
+        app:dividerColor="@color/white"
+        app:dividerWidth="2dp"
+        app:divisions="10"
+        app:isDividerEnabled="true"
+        app:progressBarBackgroundColor="#dadada"
+        app:progressBarColor="#ff2d2d" />
+
+</RelativeLayout>
