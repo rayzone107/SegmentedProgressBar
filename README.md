@@ -16,7 +16,7 @@ Download the Demo app on Google Play Store:
 
 <h3>Gradle</h3>
 
-Add JiPack in your root build.gradle at the end of repositories:
+Add JitPack in your root build.gradle at the end of repositories:
 
 ```
 allprojects {
