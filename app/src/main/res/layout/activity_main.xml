@@ -18,11 +18,26 @@
         android:textColor="@android:color/black"
         android:textSize="20sp" />
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_below="@id/title"
+        android:background="#000" />
+
+    <TextView
+        android:id="@+id/label_1"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_below="@id/title"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="10dp"
+        android:text="Basic Implementation" />
+
     <com.rachitgoyal.segmented.SegmentedProgressBar
         android:id="@+id/segmented_pb_1"
         android:layout_width="wrap_content"
         android:layout_height="30dp"
-        android:layout_below="@id/title"
+        android:layout_below="@id/label_1"
         android:layout_centerHorizontal="true"
         android:layout_margin="10dp"
         app:cornerRadius="4dp"
@@ -32,5 +47,11 @@
         app:isDividerEnabled="true"
         app:progressBarBackgroundColor="#dadada"
         app:progressBarColor="#ff2d2d" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_below="@id/title"
+        android:background="#000" />
 
 </RelativeLayout>
