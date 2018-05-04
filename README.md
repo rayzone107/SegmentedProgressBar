@@ -4,7 +4,7 @@ Segmented Progress Bar allows you to create progress bars with Segments. And you
 
 This comes in very handy when you wish to inform the user about completed/pending segments of the app.
 
-![alt text](https://github.com/rayzone107/DurationView/blob/master/Image%201.png) . . . . . ![alt text](https://github.com/rayzone107/DurationView/blob/master/Image%202.png) 
+![alt text](/Image.png)
 
 <h3>Sample App</h3>
 
@@ -70,6 +70,8 @@ These values can also be set programatically.
         
         spb.setEnabledDivisions(Arrays.asList(1, 3, 4, 6, 8, 9)); \\ pass a list of integers, with the values that are to be enabled.
 ```
+
+Now within the code, you can anytime change the value of the enabled/disabled divisions by simply making a call to `spb.setEnabledDivisions(enabledList)`.
 
 <h2>Contribution</h2>
 
