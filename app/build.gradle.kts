@@ -85,3 +85,19 @@ dependencies {
     testImplementation(libs.androidx.compose.ui.test.junit4)
     testImplementation(libs.androidx.compose.ui.test.manifest)
 }
+
+// Regenerating the README's images is opt-in:
+//
+//     ./gradlew :app:testDebugUnitTest --tests '*DocsScreenshotTest*' -Pdocs
+//
+// Without -Pdocs the generator still runs as an ordinary test, asserting that
+// every documented configuration renders, but writes nothing. Keeping the write
+// behind a flag means a normal test run never touches tracked files.
+tasks.withType<Test>().configureEach {
+    if (project.hasProperty("docs")) {
+        systemProperty(
+            "spb.docs.dir",
+            rootProject.layout.projectDirectory.dir("docs/images").asFile.absolutePath,
+        )
+    }
+}

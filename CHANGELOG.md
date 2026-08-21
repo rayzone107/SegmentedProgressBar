@@ -112,7 +112,7 @@ documentation. The Java API from 0.0.1 still compiles, see
 - **Accessibility.** The bar reports itself as a `ProgressBar` and supplies a
   localised, correctly pluralised content description such as
   "6 of 10 segments complete" when the caller has not set one.
-- **A test suite of 259 tests** covering geometry, attribute parsing, validation,
+- **A test suite of 261 tests** covering geometry, attribute parsing, validation,
   drawing output, corner modes, height bands, gaps, size constraints, drop
   shadow, toggle/entry/recurring animation, touch handling, RTL, padding, instance
   state, accessibility, Java interoperability, the Compose bindings and the demo
