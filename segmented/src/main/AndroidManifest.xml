@@ -1,2 +1,6 @@
-<manifest package="com.rachitgoyal.segmentedprogressbar"
-          xmlns:android="http://schemas.android.com/apk/res/android" />
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  This library contributes no manifest entries. The `package` attribute that used
+  to live here is now the `namespace` in build.gradle.kts, as required since AGP 8.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

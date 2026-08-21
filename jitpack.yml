@@ -1,0 +1,17 @@
+# JitPack build configuration.
+#
+# AGP 9 requires JDK 17+, and JitPack's default JDK is older than that, so it has
+# to be selected explicitly.
+#
+# Only the two library modules are published. The :app module is a demo, and
+# building it on JitPack would just be wasted time and an extra way for a release
+# to fail.
+jdk:
+  - openjdk17
+
+install:
+  - >-
+    ./gradlew
+    :segmented:publishReleasePublicationToMavenLocal
+    :segmented-compose:publishReleasePublicationToMavenLocal
+    -x test --no-daemon
