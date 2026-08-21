@@ -1,12 +1,111 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <declare-styleable name="SegmentedProgressBar">
-        <attr name="dividerColor" format="color" />
-        <attr name="progressBarBackgroundColor" format="color" />
+
+        <!--
+          The seven original attributes. These are unprefixed for backwards
+          compatibility with 0.0.1 layouts and must stay that way.
+        -->
+        <attr name="divisions" format="integer" />
         <attr name="progressBarColor" format="color" />
+        <attr name="progressBarBackgroundColor" format="color" />
+        <attr name="dividerColor" format="color" />
         <attr name="dividerWidth" format="dimension" />
         <attr name="isDividerEnabled" format="boolean" />
-        <attr name="divisions" format="integer" />
         <attr name="cornerRadius" format="dimension" />
+
+        <!--
+          Everything added in 2.0.0 is prefixed `spb_`.
+          Names like `shadowColor`, `shadowRadius` and `cornerMode` are extremely
+          common; an unprefixed attribute of the same name but a different format
+          in another library breaks the resource merge for the consumer, which is
+          a worse outcome than an inconsistent-looking attribute set.
+        -->
+
+        <!-- Which edges the corner radius is applied to. -->
+        <attr name="spb_cornerMode" format="enum">
+            <!-- Round only the two ends of the whole bar. The default. -->
+            <enum name="barEnds" value="0" />
+            <!-- Round all four corners of every segment individually. -->
+            <enum name="eachSegment" value="1" />
+            <!-- Round the outer ends of each contiguous run of lit segments. -->
+            <enum name="eachRun" value="2" />
+        </attr>
+
+        <!-- Height of lit segments as a fraction of the bar, 0..1. -->
+        <attr name="spb_activeHeightRatio" format="float" />
+        <!-- Height of the unlit track as a fraction of the bar, 0..1. -->
+        <attr name="spb_inactiveHeightRatio" format="float" />
+
+        <!-- Drop shadow cast by the lit segments. A radius of 0 disables it. -->
+        <attr name="spb_shadowRadius" format="dimension" />
+        <attr name="spb_shadowDx" format="dimension" />
+        <attr name="spb_shadowDy" format="dimension" />
+        <attr name="spb_shadowColor" format="color" />
+
+        <!-- Which parts of the bar cast the shadow. -->
+        <attr name="spb_shadowTarget" format="enum">
+            <!-- Only the segments that are on. -->
+            <enum name="onSegments" value="0" />
+            <!-- Only the segments that are off. -->
+            <enum name="offSegments" value="1" />
+            <!-- Every segment, on or off. The default. -->
+            <enum name="all" value="2" />
+        </attr>
+
+        <!-- How a segment transitions when it is lit or cleared. -->
+        <attr name="spb_segmentAnimation" format="enum">
+            <!-- Change instantly. The default. -->
+            <enum name="none" value="0" />
+            <!-- Fade the segment in and out. -->
+            <enum name="fade" value="1" />
+            <!-- Grow the segment from its leading edge. -->
+            <enum name="grow" value="2" />
+        </attr>
+
+        <!-- Duration of that transition, in milliseconds. -->
+        <attr name="spb_animationDuration" format="integer" />
+
+        <!-- How the bar's initial state arrives the first time it is shown. -->
+        <attr name="spb_entryAnimation" format="enum">
+            <!-- Appear fully formed. The default. -->
+            <enum name="none" value="0" />
+            <!-- Fade every lit segment in together. -->
+            <enum name="fade" value="1" />
+            <!-- Grow every lit segment from its leading edge together. -->
+            <enum name="grow" value="2" />
+            <!-- Reveal lit segments one after another in reading order. -->
+            <enum name="stagger" value="3" />
+        </attr>
+
+        <!-- Delay between segments in a staggered entry, in milliseconds. -->
+        <attr name="spb_entryStaggerDelay" format="integer" />
+
+        <!-- A continuous animation that plays while the bar is visible. -->
+        <attr name="spb_recurringAnimation" format="enum">
+            <!-- Nothing. The default. -->
+            <enum name="none" value="0" />
+            <!-- A highlight sweeps repeatedly across the lit segments. -->
+            <enum name="shimmer" value="1" />
+            <!-- The lit segments breathe in and out together. -->
+            <enum name="pulse" value="2" />
+        </attr>
+
+        <!-- Period of one recurring cycle, in milliseconds. -->
+        <attr name="spb_recurringDuration" format="integer" />
+
+        <!-- Colour blended in at the peak of a shimmer sweep. -->
+        <attr name="spb_shimmerColor" format="color" />
+
+        <!-- Upper bounds on the measured size. Android has no android:maxWidth
+             for a plain View, so these fill that gap. -->
+        <attr name="spb_maxWidth" format="dimension" />
+        <attr name="spb_maxHeight" format="dimension" />
+
+        <!-- Whether tapping a segment toggles it. Off by default; turning it on is
+             all an XML-only bar needs to become interactive. Leave it off if you
+             hold the lit set yourself and toggle it in an
+             OnDivisionClickListener, or the two will cancel out. -->
+        <attr name="spb_tapToToggle" format="boolean" />
     </declare-styleable>
 </resources>

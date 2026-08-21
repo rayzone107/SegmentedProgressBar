@@ -1,3 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">SegmentedProgressBar</string>
+    <!--
+      Names here are prefixed so they can never collide with, or be accidentally
+      overridden by, a consuming app's resources. This is the only string the
+      library ships; the previous `app_name` entry was removed because a library
+      has no business declaring one.
+
+      A plural rather than a plain string: the grammatical number of "segments"
+      is governed by the total, which differs per locale.
+    -->
+    <plurals name="segmented_progress_bar_content_description">
+        <item quantity="one">%1$d of %2$d segment complete</item>
+        <item quantity="other">%1$d of %2$d segments complete</item>
+    </plurals>
 </resources>

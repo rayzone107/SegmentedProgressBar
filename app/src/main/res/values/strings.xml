@@ -1,3 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">SegmentedProgressBar</string>
+
+    <string name="tab_playground">Playground</string>
+    <string name="tab_gallery">Gallery</string>
+
+    <string name="section_toggle">Tap any segment</string>
+    <string name="section_toggle_caption">Tap segments in any order to turn them on and off.</string>
+    <string name="toggle_bar_description">Tap a segment to toggle it</string>
+
+    <string name="section_sparse">Setting segments in code</string>
+    <string name="section_sparse_caption">One assignment sets exactly which segments are on.</string>
+
+    <string name="section_habit">Use case: a weekly habit tracker</string>
+    <string name="section_habit_caption">Seven divisions, one per day. Missed days stay off.</string>
+
+    <string name="section_pill">Gaps without dividers</string>
+    <string name="section_pill_caption">isDividerEnabled=false, so adjacent segments that are on merge into a single run.</string>
+
+    <string name="section_height">Height difference</string>
+    <string name="section_height_caption">spb_inactiveHeightRatio=0.7, off segments sit slightly inset so the on segments read as raised. Both default to the same height; either can be the smaller.</string>
+
+    <string name="section_each_segment">Rounded corners per segment</string>
+    <string name="section_each_segment_caption">spb_cornerMode=eachSegment, every cell is its own pill, lit or not.</string>
+
+    <string name="section_each_run">Rounded corners per run</string>
+    <string name="section_each_run_caption">spb_cornerMode=eachRun, so each run of adjacent segments becomes a single pill.</string>
+
+    <string name="section_shadow">Drop shadow</string>
+    <string name="section_shadow_caption">spb_shadowRadius with an offset. Drawn outside the bar and never resizing it, so the view carries padding to give the blur room.</string>
+
+    <string name="section_fade">Animation: fade</string>
+    <string name="section_fade_caption">spb_segmentAnimation=fade, with spb_tapToToggle so the bar handles the tap itself. Tap a segment to see it cross-fade in and out.</string>
+
+    <string name="section_grow">Animation: grow</string>
+    <string name="section_grow_caption">spb_segmentAnimation=grow. Tap a segment to see it extend from its leading edge.</string>
+
+    <string name="section_rtl">Right-to-left</string>
+    <string name="section_rtl_caption">The same set under layoutDirection=rtl. Segment 0 sits at the right, so the pattern mirrors.</string>
+
+
+    <string name="section_padding">Padding is honoured</string>
+    <string name="section_padding_caption">The track is inset by the view\'s padding; the tinted area is the full view bounds.</string>
+
+    <string name="section_wrap">wrap_content</string>
+    <string name="section_wrap_caption">Falls back to an intrinsic 144dp × 8dp instead of collapsing to nothing.</string>
+
+    <string name="action_reset">Clear all</string>
+
+    <string name="toggle_label">enabledDivisions = %1$s</string>
+
+    <string name="day_monday">M</string>
+    <string name="day_tuesday">T</string>
+    <string name="day_wednesday">W</string>
+    <string name="day_thursday">T</string>
+    <string name="day_friday">F</string>
+    <string name="day_saturday">S</string>
+    <string name="day_sunday">S</string>
 </resources>

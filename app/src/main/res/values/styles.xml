@@ -1,11 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Base application theme. -->
-    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
-        <!-- Customize your theme here. -->
-        <item name="colorPrimary">@color/colorPrimary</item>
-        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
-        <item name="colorAccent">@color/colorAccent</item>
+    <!--
+      DayNight rather than Light. With a Light-only theme on a device in dark mode
+      Android applies force-dark and auto-inverts the whole view tree, which
+      turned the bar's black drop shadow into a white halo around every segment.
+      Declaring a real dark variant is what stops that; no forceDarkAllowed
+      opt-out is needed, and that attribute would need API 29 anyway.
+    -->
+    <style name="AppTheme" parent="Theme.Material3.DayNight.NoActionBar" />
+
+    <style name="SectionHeader" parent="android:Widget.TextView">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">28dp</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">?attr/colorOnSurface</item>
+    </style>
+
+    <style name="SectionCaption" parent="android:Widget.TextView">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textColor">?attr/colorOnSurfaceVariant</item>
     </style>
 
 </resources>

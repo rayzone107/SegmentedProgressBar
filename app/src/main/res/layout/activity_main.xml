@@ -1,57 +1,379 @@
 <?xml version="1.0" encoding="utf-8"?>
-<RelativeLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<!--
+  The app bar is a Toolbar inside the layout rather than a theme ActionBar, so
+  window insets can be applied to it explicitly. Since targetSdk 35 Android
+  enforces edge-to-edge, and a theme ActionBar lays the content out from the top
+  of the window, leaving the first section hidden underneath it.
+
+  Both tab pages are always inflated and simply shown or hidden, rather than
+  living in a ViewPager2. A pager would recycle the pages, which would make the
+  Gallery's views come and go, and those views are the library's consumer-side
+  test surface.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context="com.rachitgoyal.segmentedprogressbar.MainActivity">
+    android:orientation="vertical"
+    tools:context=".MainActivity">
 
-    <TextView
-        android:id="@+id/title"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_centerHorizontal="true"
-        android:layout_marginBottom="10dp"
-        android:layout_marginTop="10dp"
-        android:text="Sample Usage"
-        android:textColor="@android:color/black"
-        android:textSize="20sp" />
-
-    <View
+    <androidx.appcompat.widget.Toolbar
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_below="@id/title"
-        android:background="#000" />
-
-    <TextView
-        android:id="@+id/label_1"
-        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_below="@id/title"
-        android:layout_centerHorizontal="true"
-        android:layout_marginTop="10dp"
-        android:text="Basic Implementation" />
+        android:background="?attr/colorPrimary"
+        android:minHeight="?attr/actionBarSize"
+        app:titleTextColor="?attr/colorOnPrimary" />
 
-    <com.rachitgoyal.segmented.SegmentedProgressBar
-        android:id="@+id/segmented_pb_1"
-        android:layout_width="wrap_content"
-        android:layout_height="30dp"
-        android:layout_below="@id/label_1"
-        android:layout_centerHorizontal="true"
-        android:layout_margin="10dp"
-        app:cornerRadius="4dp"
-        app:dividerColor="@color/white"
-        app:dividerWidth="2dp"
-        app:divisions="10"
-        app:isDividerEnabled="true"
-        app:progressBarBackgroundColor="#dadada"
-        app:progressBarColor="#ff2d2d" />
-
-    <View
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabs"
         android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:layout_below="@id/title"
-        android:background="#000" />
+        android:layout_height="wrap_content"
+        android:background="?attr/colorPrimary"
+        app:tabIndicatorColor="?attr/colorOnPrimary"
+        app:tabIndicatorFullWidth="false"
+        app:tabSelectedTextColor="?attr/colorOnPrimary"
+        app:tabTextColor="#B3FFFFFF" />
 
-</RelativeLayout>
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <androidx.compose.ui.platform.ComposeView
+            android:id="@+id/playground_page"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <ScrollView
+            android:id="@+id/scroll"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipToPadding="false"
+            android:fillViewport="true"
+            android:visibility="gone">
+
+    <!--
+      focusableInTouchMode + beforeDescendants stops the first focusable child
+      (the tappable bar, which is focusable so keyboards and a11y can reach it)
+      from taking initial focus and making the ScrollView jump past section one.
+    -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:descendantFocusability="beforeDescendants"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:orientation="vertical"
+        android:paddingHorizontal="20dp"
+        android:paddingVertical="24dp">
+
+        <!-- Toggling segments by tapping them. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:layout_marginTop="0dp"
+            android:text="@string/section_toggle" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_toggle_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/toggle_bar"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:contentDescription="@string/toggle_bar_description"
+            app:cornerRadius="6dp"
+            app:dividerColor="@android:color/white"
+            app:dividerWidth="3dp"
+            app:divisions="10"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#2F6FED" />
+
+        <TextView
+            android:id="@+id/toggle_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:fontFamily="monospace"
+            android:textSize="15sp"
+            tools:text="enabledDivisions = [1, 2, 5, 6, 9]" />
+
+        <Button
+            android:id="@+id/toggle_reset"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/action_reset" />
+
+        <!-- Setting the segments declaratively. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_sparse" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_sparse_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/sparse_bar"
+            android:layout_width="match_parent"
+            android:layout_height="22dp"
+            app:cornerRadius="4dp"
+            app:dividerColor="@android:color/white"
+            app:dividerWidth="3dp"
+            app:divisions="10"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#F31260" />
+
+        <!-- A real use case. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_habit" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_habit_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/habit_bar"
+            android:layout_width="match_parent"
+            android:layout_height="28dp"
+            app:cornerRadius="14dp"
+            app:dividerColor="@android:color/white"
+            app:dividerWidth="4dp"
+            app:divisions="7"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#12A150" />
+
+        <LinearLayout
+            android:id="@+id/habit_days"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+
+        <!-- Gaps instead of divider lines. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_pill" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_pill_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/pill_bar"
+            android:layout_width="match_parent"
+            android:layout_height="14dp"
+            app:cornerRadius="7dp"
+            app:divisions="12"
+            app:isDividerEnabled="false"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#9353D3" />
+
+        <!-- ===== Styling variants ===== -->
+
+        <!-- Height difference: slim rail, chunky completed segments. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_height" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_height_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/height_bar"
+            android:layout_width="match_parent"
+            android:layout_height="34dp"
+            app:cornerRadius="17dp"
+            app:divisions="10"
+            app:isDividerEnabled="false"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#2F6FED"
+            app:spb_activeHeightRatio="1.0"
+            app:spb_cornerMode="eachRun"
+            app:spb_inactiveHeightRatio="0.7" />
+
+        <!-- Rounded corners on every segment. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_each_segment" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_each_segment_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/each_segment_bar"
+            android:layout_width="match_parent"
+            android:layout_height="24dp"
+            app:cornerRadius="7dp"
+            app:dividerWidth="0dp"
+            app:divisions="8"
+            app:isDividerEnabled="false"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#12A150"
+            app:spb_cornerMode="eachSegment" />
+
+        <!-- Rounded corners per contiguous run. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_each_run" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_each_run_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/each_run_bar"
+            android:layout_width="match_parent"
+            android:layout_height="20dp"
+            app:cornerRadius="10dp"
+            app:divisions="12"
+            app:isDividerEnabled="false"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#9353D3"
+            app:spb_cornerMode="eachRun" />
+
+        <!-- Drop shadow. The shadow draws outside the bar, so the view carries
+             padding to give it somewhere to land. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_shadow" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_shadow_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/shadow_bar"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="12dp"
+            app:cornerRadius="8dp"
+            app:divisions="6"
+            app:isDividerEnabled="false"
+            app:progressBarBackgroundColor="#EDEFF2"
+            app:progressBarColor="#F31260"
+            app:spb_cornerMode="eachRun"
+            app:spb_shadowColor="#73000000"
+            app:spb_shadowDy="3dp"
+            app:spb_shadowRadius="5dp" />
+
+        <!-- Animation: fade. Tappable so the transition is visible. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_fade" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_fade_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/fade_bar"
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            android:contentDescription="@string/toggle_bar_description"
+            app:cornerRadius="6dp"
+            app:dividerColor="@android:color/white"
+            app:dividerWidth="3dp"
+            app:divisions="8"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#006FEE"
+            app:spb_animationDuration="320"
+            app:spb_segmentAnimation="fade"
+            app:spb_tapToToggle="true" />
+
+        <!-- Animation: grow. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_grow" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_grow_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/grow_bar"
+            android:layout_width="match_parent"
+            android:layout_height="32dp"
+            android:contentDescription="@string/toggle_bar_description"
+            app:cornerRadius="6dp"
+            app:dividerColor="@android:color/white"
+            app:dividerWidth="3dp"
+            app:divisions="8"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#F5A524"
+            app:spb_animationDuration="320"
+            app:spb_segmentAnimation="grow"
+            app:spb_tapToToggle="true" />
+
+        <!-- The same set, mirrored. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_rtl" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_rtl_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/rtl_bar"
+            android:layout_width="match_parent"
+            android:layout_height="22dp"
+            android:layoutDirection="rtl"
+            app:cornerRadius="4dp"
+            app:dividerColor="@android:color/white"
+            app:dividerWidth="3dp"
+            app:divisions="10"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#F5A524" />
+
+        <!-- Layout mechanics. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_padding" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_padding_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/padded_bar"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="#1A2F6FED"
+            android:paddingHorizontal="24dp"
+            android:paddingVertical="14dp"
+            app:cornerRadius="6dp"
+            app:dividerColor="@android:color/white"
+            app:dividerWidth="3dp"
+            app:divisions="6"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#F31260" />
+
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_wrap" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_wrap_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/wrap_bar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:cornerRadius="4dp"
+            app:dividerColor="@android:color/white"
+            app:dividerWidth="2dp"
+            app:divisions="5"
+            app:progressBarBackgroundColor="#E4E7EB"
+            app:progressBarColor="#006FEE" />
+        </LinearLayout>
+        </ScrollView>
+    </FrameLayout>
+</LinearLayout>
