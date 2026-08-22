@@ -9,6 +9,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Feature release. Everything is additive: code compiled against 2.0.0 keeps
 working, source and binary alike, and `apiCheck` now enforces that in CI.
 
+**Now on Maven Central**, which needs no custom repository:
+
+```kotlin
+implementation("io.github.rayzone107:segmentedprogressbar:2.1.0")
+implementation("io.github.rayzone107:segmentedprogressbar-compose:2.1.0")
+```
+
+The JitPack coordinates keep working for 2.0.0 and 2.1.0, and the artifacts are
+identical either way; only the group differs. Maven Central is the one to use
+from here.
+
 ### Added
 
 - **Partial fills.** `setDivisionProgress(index, fraction)` and

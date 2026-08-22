@@ -831,7 +831,7 @@ The original seven:
 | `isDividerEnabled` | boolean | `true` | Whether that space is applied at all. |
 | `cornerRadius` | dimension | `2px` | Corner radius, applied per `spb_cornerMode`. |
 
-Everything added in 2.0.0 is prefixed `spb_`:
+Everything added since 2.0.0 is prefixed `spb_`:
 
 | Attribute | Format | Default | Description |
 |---|---|---|---|
@@ -1047,7 +1047,7 @@ full list; the short version:
 git clone https://github.com/rayzone107/SegmentedProgressBar.git
 cd SegmentedProgressBar
 
-./gradlew test                  # 329 unit tests across three modules
+./gradlew test                  # 336 unit tests across three modules
 ./gradlew lint                  # must report zero findings
 ./gradlew :app:installDebug     # the demo app
 ```

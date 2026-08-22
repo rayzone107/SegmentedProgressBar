@@ -94,13 +94,18 @@ the public API as something people depend on:
 
 ## Releasing
 
+The full runbook, including the one-time account and signing-key setup, is
+[docs/PUBLISHING.md](docs/PUBLISHING.md). In outline:
+
 1. Update `VERSION_NAME` in `gradle.properties`.
 2. Add a `CHANGELOG.md` entry.
 3. Tag and push: `git tag 2.1.0 && git push origin 2.1.0`. Both artifacts are
-   built from the one tag.
-4. JitPack builds the tag on first request, per `jitpack.yml`. Check the build
-   log at `https://jitpack.io/#rayzone107/SegmentedProgressBar`: it prints the
-   exact coordinate consumers should use.
+   built from the one tag, and JitPack builds it on first request per
+   `jitpack.yml`.
+4. Publish to Maven Central, which is the channel consumers should use:
+   `./gradlew publishToMavenCentral --no-configuration-cache`, then press
+   Publish on the deployment in the Central Portal. Check the deployment's
+   status rather than the build's exit code; the runbook explains why.
 
 Publishing credentials and signing keys belong in `~/.gradle/gradle.properties`
 or environment variables. Never in the repo, this project has been burned by
