@@ -5,6 +5,9 @@
     <string name="tab_playground">Playground</string>
     <string name="tab_gallery">Gallery</string>
 
+    <string name="action_dark_theme">Switch to dark theme</string>
+    <string name="action_light_theme">Switch to light theme</string>
+
     <string name="section_toggle">Tap any segment</string>
     <string name="section_toggle_caption">Tap segments in any order to turn them on and off.</string>
     <string name="toggle_bar_description">Tap a segment to toggle it</string>

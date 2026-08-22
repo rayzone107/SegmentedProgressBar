@@ -1,10 +1,15 @@
 package com.rachitgoyal.segmentedprogressbar.demo
 
+import android.content.res.Configuration
 import android.os.Bundle
 import android.view.Gravity
+import android.view.Menu
+import android.view.MenuItem
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.content.edit
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -28,6 +33,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Before super, so the first creation already comes up in the saved
+        // theme rather than flashing the system one and recreating.
+        AppCompatDelegate.setDefaultNightMode(
+            themePrefs.getInt(KEY_NIGHT_MODE, AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM),
+        )
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
@@ -45,6 +55,47 @@ class MainActivity : AppCompatActivity() {
         setUpAnimatedBars()
     }
 
+    // region theme toggle
+
+    private val themePrefs by lazy { getSharedPreferences(THEME_PREFS, MODE_PRIVATE) }
+
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.main, menu)
+        // The action advertises the theme it switches to, not the current one.
+        menu.findItem(R.id.action_theme).apply {
+            if (isDarkTheme()) {
+                setIcon(R.drawable.ic_theme_light)
+                setTitle(R.string.action_light_theme)
+            }
+        }
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId != R.id.action_theme) return super.onOptionsItemSelected(item)
+        val mode = if (isDarkTheme()) {
+            AppCompatDelegate.MODE_NIGHT_NO
+        } else {
+            AppCompatDelegate.MODE_NIGHT_YES
+        }
+        themePrefs.edit { putInt(KEY_NIGHT_MODE, mode) }
+        AppCompatDelegate.setDefaultNightMode(mode)
+        return true
+    }
+
+    /**
+     * An explicit choice wins; the configuration only decides while the app is
+     * still following the system.
+     */
+    private fun isDarkTheme(): Boolean = when (AppCompatDelegate.getDefaultNightMode()) {
+        AppCompatDelegate.MODE_NIGHT_YES -> true
+        AppCompatDelegate.MODE_NIGHT_NO -> false
+        else -> resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES
+    }
+
+    // endregion
+
     /**
      * Insets the app bar and the scrolling content by the system bars.
      *
@@ -56,7 +107,11 @@ class MainActivity : AppCompatActivity() {
      * rather than stopping short of it.
      */
     private fun applyWindowInsets() {
-        WindowInsetsControllerCompat(window, binding.root).isAppearanceLightStatusBars = false
+        // Material3 flips colorPrimary's lightness between themes: dark purple
+        // in light, pale lavender in dark. The status icons sit on that colour,
+        // so their appearance flips with it.
+        WindowInsetsControllerCompat(window, binding.root).isAppearanceLightStatusBars =
+            isDarkTheme()
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -251,6 +306,9 @@ class MainActivity : AppCompatActivity() {
     // endregion
 
     private companion object {
+        const val THEME_PREFS = "theme"
+        const val KEY_NIGHT_MODE = "night_mode"
+
         /** An arbitrary selection, which is all this library ever asks for. */
         val SPARSE_SELECTION = listOf(1, 2, 5, 6, 9)
 

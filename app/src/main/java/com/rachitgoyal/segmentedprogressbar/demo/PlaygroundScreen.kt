@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -131,6 +133,10 @@ private class PlaygroundState {
     var tapToToggle by mutableStateOf(true)
     var perSegmentA11y by mutableStateOf(false)
 
+    var partialOn by mutableStateOf(false)
+    var partialIndex by mutableIntStateOf(3)
+    var partialFraction by mutableFloatStateOf(0.4f)
+
     var segmentAnimation by mutableStateOf(SegmentAnimation.FADE)
     var entryAnimation by mutableStateOf(EntryAnimation.STAGGER)
     var recurring by mutableStateOf(RecurringAnimation.NONE)
@@ -152,12 +158,24 @@ private class PlaygroundState {
             null
         }
 
+    /**
+     * The map handed to the bar, rounded to two decimals so the readout under
+     * the preview shows the same value the bar draws.
+     */
+    val segmentProgress: Map<Int, Float>
+        get() = if (partialOn) {
+            mapOf(partialIndex to (partialFraction * 100).roundToInt() / 100f)
+        } else {
+            emptyMap()
+        }
+
     fun toggle(index: Int) {
         lit = if (index in lit) lit - index else lit + index
     }
 
-    fun clampLitToDivisions() {
+    fun clampToDivisions() {
         lit = lit.filter { it < divisions }.toSet()
+        partialIndex = partialIndex.coerceIn(0, divisions - 1)
     }
 }
 
@@ -235,6 +253,7 @@ private fun PinnedPreview(state: PlaygroundState) {
                         recurringAnimation = state.recurring,
                         animationDurationMillis = state.durationMs,
                         recurringDurationMillis = state.recurringMs,
+                        segmentProgress = state.segmentProgress,
                         perSegmentAccessibility = state.perSegmentA11y,
                         // Compose holds the lit set outside the bar, so an
                         // interactive bar is one with a click handler and a
@@ -251,6 +270,14 @@ private fun PinnedPreview(state: PlaygroundState) {
                 style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (state.partialOn) {
+                Text(
+                    text = "segmentProgress = ${state.segmentProgress}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
 
             Spacer(Modifier.height(10.dp))
 
@@ -292,7 +319,7 @@ private fun SegmentsCard(state: PlaygroundState) {
             display = "${state.divisions}",
         ) {
             state.divisions = it.roundToInt()
-            state.clampLitToDivisions()
+            state.clampToDivisions()
         }
 
         ToggleRow(label = "Tapping a segment toggles it", checked = state.tapToToggle) {
@@ -303,6 +330,42 @@ private fun SegmentsCard(state: PlaygroundState) {
             label = "Each segment is its own accessibility node",
             checked = state.perSegmentA11y,
         ) { state.perSegmentA11y = it }
+
+        ToggleRow(
+            label = "One segment is partially filled",
+            checked = state.partialOn,
+        ) { state.partialOn = it }
+
+        if (state.partialOn) {
+            if (state.divisions > 1) {
+                SliderRow(
+                    label = "Which segment",
+                    value = state.partialIndex.toFloat(),
+                    range = 0f..(state.divisions - 1).toFloat(),
+                    steps = (state.divisions - 2).coerceAtLeast(0),
+                    display = "${state.partialIndex}",
+                ) { state.partialIndex = it.roundToInt() }
+            }
+
+            SliderRow(
+                label = "Fill",
+                value = state.partialFraction,
+                range = 0f..1f,
+                steps = 0,
+                display = state.partialFraction.asPercent(),
+            ) { state.partialFraction = it }
+
+            // The library's rule, demonstrated rather than hidden: turning the
+            // same segment fully on makes the partial entry inert.
+            if (state.partialIndex in state.lit) {
+                Text(
+                    text = "Segment ${state.partialIndex} is on, so the partial " +
+                        "is ignored: a full segment supersedes its entry.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -690,11 +753,15 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // The whole row is the control, not just the switch: a larger
+            // target, and accessibility services read the label and the state
+            // as one thing.
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = labelStyle(), modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

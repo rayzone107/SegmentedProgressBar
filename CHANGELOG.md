@@ -44,6 +44,10 @@ working, source and binary alike, and `apiCheck` now enforces that in CI.
   matching it, and `apiDump` regenerates it for intentional changes. The 2.0.0
   Compose signature is retained as a hidden bridge, so binaries compiled
   against 2.0.0 keep linking even though the composable gained parameters.
+- **(Demo app)** The Playground gained a partial fill control that shows the
+  exact `segmentProgress` map it passes, and the toolbar gained a light/dark
+  toggle that remembers its choice, so every feature can be checked in both
+  themes without touching system settings.
 
 ### Changed
 

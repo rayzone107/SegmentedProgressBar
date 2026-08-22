@@ -5,14 +5,18 @@ import android.os.SystemClock
 import android.view.MotionEvent
 import android.widget.Button
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
 import com.rachitgoyal.segmented.SegmentedProgressBar
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.android.controller.ActivityController
+import org.robolectric.fakes.RoboMenu
+import org.robolectric.fakes.RoboMenuItem
 
 /**
  * Drives the Gallery tab the way a user would, which doubles as an integration
@@ -259,6 +263,60 @@ class MainActivityTest {
 
         controller.tapSegment(R.id.fade_bar, 1)
         assertThat(bar.enabledDivisions).containsExactly(2, 3, 5).inOrder()
+    }
+
+    // endregion
+
+    // region theme toggle
+
+    /** Night mode is process-global state; put it back so no other test inherits it. */
+    @After
+    fun resetNightMode() {
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+    }
+
+    @Test
+    fun `the theme action switches a light app to dark`() {
+        val controller = launch()
+
+        controller.get().onOptionsItemSelected(RoboMenuItem(R.id.action_theme))
+
+        assertThat(AppCompatDelegate.getDefaultNightMode())
+            .isEqualTo(AppCompatDelegate.MODE_NIGHT_YES)
+    }
+
+    @Test
+    fun `a second use of the theme action returns to light`() {
+        val activity = launch().get()
+
+        activity.onOptionsItemSelected(RoboMenuItem(R.id.action_theme))
+        activity.onOptionsItemSelected(RoboMenuItem(R.id.action_theme))
+
+        assertThat(AppCompatDelegate.getDefaultNightMode())
+            .isEqualTo(AppCompatDelegate.MODE_NIGHT_NO)
+    }
+
+    @Test
+    fun `the chosen theme survives a relaunch`() {
+        launch().get().onOptionsItemSelected(RoboMenuItem(R.id.action_theme))
+        // Wipe the in-process state, leaving only what was persisted.
+        AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+
+        launch()
+
+        assertThat(AppCompatDelegate.getDefaultNightMode())
+            .isEqualTo(AppCompatDelegate.MODE_NIGHT_YES)
+    }
+
+    @Test
+    fun `the menu advertises the theme it would switch to`() {
+        val activity = launch().get()
+        val menu = RoboMenu(activity)
+
+        activity.onCreateOptionsMenu(menu)
+
+        assertThat(menu.findItem(R.id.action_theme).title.toString())
+            .isEqualTo("Switch to dark theme")
     }
 
     // endregion

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The icon and title here are the light-theme defaults; MainActivity swaps both
+  to their opposites when the app is in dark mode, so the action always shows
+  the theme you would switch to.
+-->
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/action_theme"
+        android:icon="@drawable/ic_theme_dark"
+        android:title="@string/action_dark_theme"
+        app:showAsAction="always" />
+
+</menu>
