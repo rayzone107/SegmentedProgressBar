@@ -153,6 +153,14 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      */
     private val partialFills = android.util.SparseArray<Float>()
 
+    /**
+     * Per-division overrides of [progressBarColor], by index.
+     *
+     * Consulted at draw time through [effectiveDivisionColor], so the single
+     * global colour stays the primary API and this map only ever narrows it.
+     */
+    private val divisionColors = android.util.SparseIntArray()
+
     private var divisionClickListener: OnDivisionClickListener? = null
 
     /** Where the in-flight touch went down; `NaN` when there isn't one. */
@@ -1008,6 +1016,72 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
     }
 
     /**
+     * Gives the division at [index] its own on-colour, superseding
+     * [progressBarColor] for that division only.
+     *
+     * The rule is exactly one sentence: **a colour set here wins over
+     * [progressBarColor] for its division; every division without one keeps
+     * using [progressBarColor].** Changing [progressBarColor] later never
+     * clears these overrides; [clearDivisionColor] and [clearDivisionColors]
+     * are the way back to the single-colour path.
+     *
+     * The override colours everything on-coloured in that division: its full
+     * fill, its partial fill from [setDivisionProgress], and the base a shimmer
+     * or pulse tints. Off segments always use [progressBarBackgroundColor].
+     * The classic use is a heatmap or streak calendar, where every cell is on
+     * and each carries an intensity:
+     *
+     * ```kotlin
+     * bar.enabledDivisions = (0 until bar.divisions).toList()
+     * intensities.forEachIndexed { index, level ->
+     *     bar.setDivisionColor(index, shadeFor(level))
+     * }
+     * ```
+     *
+     * Like every other colour on this view, overrides are not part of saved
+     * instance state. Negative indices are ignored; indices beyond [divisions]
+     * are retained and take effect if the bar later grows.
+     */
+    public fun setDivisionColor(index: Int, @ColorInt color: Int) {
+        if (index < 0) return
+        if (divisionColors.indexOfKey(index) >= 0 && divisionColors[index] == color) return
+        divisionColors.put(index, color)
+        invalidate()
+    }
+
+    /** Removes the [setDivisionColor] override at [index], if there is one. */
+    public fun clearDivisionColor(index: Int) {
+        val at = divisionColors.indexOfKey(index)
+        if (at < 0) return
+        divisionColors.removeAt(at)
+        invalidate()
+    }
+
+    /** Removes every [setDivisionColor] override, returning to one colour. */
+    public fun clearDivisionColors() {
+        if (divisionColors.size() == 0) return
+        divisionColors.clear()
+        invalidate()
+    }
+
+    /**
+     * The on-colour the division at [index] actually draws with: its
+     * [setDivisionColor] override if it has one, [progressBarColor] otherwise.
+     */
+    @ColorInt
+    public fun getDivisionColor(index: Int): Int = effectiveDivisionColor(index)
+
+    /** Whether the division at [index] has a [setDivisionColor] override. */
+    public fun hasDivisionColor(index: Int): Boolean = divisionColors.indexOfKey(index) >= 0
+
+    private fun effectiveDivisionColor(index: Int): Int =
+        if (divisionColors.indexOfKey(index) >= 0) {
+            divisionColors[index]
+        } else {
+            progressPaint.color
+        }
+
+    /**
      * The index of the segment at horizontal position [x], or [NO_DIVISION] if
      * [x] falls outside the bar's content box.
      *
@@ -1576,9 +1650,15 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
 
             if (!computeSpan(contentWidth, dividerSpan, index, isRtl, growthOf(fraction))) continue
 
-            // Recurring first, then the transition fade on top, so a segment
-            // arriving during a shimmer both tints and fades correctly.
-            var paintColor = recurringColorFor(index, baseColor, now)
+            // The division's own colour if it has one, then the recurring tint,
+            // then the transition fade on top, so a segment arriving during a
+            // shimmer both tints and fades correctly.
+            val divisionBase = if (divisionColors.indexOfKey(index) >= 0) {
+                divisionColors[index]
+            } else {
+                baseColor
+            }
+            var paintColor = recurringColorFor(index, divisionBase, now)
             if (activeTransitionStyle == SegmentAnimation.FADE && fraction < 1f) {
                 // Scaling the colour's alpha channel rather than calling
                 // Paint.setAlpha: the two are equivalent for a solid paint, but
@@ -1656,7 +1736,12 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         if (!computeSpan(contentWidth, dividerSpan, index, isRtl, growFraction = fill)) return
 
         val baseColor = progressPaint.color
-        val paintColor = recurringColorFor(index, baseColor, now)
+        val divisionBase = if (divisionColors.indexOfKey(index) >= 0) {
+            divisionColors[index]
+        } else {
+            baseColor
+        }
+        val paintColor = recurringColorFor(index, divisionBase, now)
         if (progressPaint.color != paintColor) progressPaint.color = paintColor
 
         val saveCount = canvas.save()

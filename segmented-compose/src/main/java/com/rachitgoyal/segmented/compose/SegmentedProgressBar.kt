@@ -102,6 +102,12 @@ import kotlinx.coroutines.launch
  * @param shimmerColor colour blended in at the peak of a shimmer sweep.
  * @param contentDescription accessibility label; a sensible one is generated when
  *   `null`.
+ * @param segmentColors per-segment overrides of [onColor], by index. The rule
+ *   is one sentence: a colour here wins over [onColor] for its segment; every
+ *   segment without one keeps using [onColor]. The override covers the
+ *   segment's full fill, its partial fill, and the base a shimmer or pulse
+ *   tints; off segments always use [offColor]. The classic use is a heatmap,
+ *   every segment on and each carrying an intensity.
  * @param segmentProgress fractional fills by segment index, `0` to `1`, for
  *   segments that are underway rather than done: the stories or chapters
  *   pattern, where finished segments are in [enabledSegments] and the current
@@ -135,6 +141,7 @@ public fun SegmentedProgressBar(
     recurringDurationMillis: Int = SegmentedProgressBarDefaults.RecurringDurationMillis,
     shimmerColor: Color = SegmentedProgressBarDefaults.ShimmerColor,
     contentDescription: String? = null,
+    segmentColors: Map<Int, Color> = emptyMap(),
     segmentProgress: Map<Int, Float> = emptyMap(),
     onSegmentClick: ((Int) -> Unit)? = null,
 ) {
@@ -209,7 +216,7 @@ public fun SegmentedProgressBar(
                         else (segmentProgress[index] ?: 0f).coerceIn(0f, 1f)
                     },
                     transitionStyle = animation.style,
-                    onColor = onColor,
+                    onColorOf = { index -> segmentColors[index] ?: onColor },
                     offColor = offColor,
                     gapPx = gap.toPx(),
                     gapColor = gapColor,
@@ -533,7 +540,7 @@ private fun DrawScope.drawSegmentedBar(
     fractionOf: (Int) -> Float,
     partialOf: (Int) -> Float,
     transitionStyle: SegmentAnimation,
-    onColor: Color,
+    onColorOf: (Int) -> Color,
     offColor: Color,
     gapPx: Float,
     gapColor: Color,
@@ -641,7 +648,7 @@ private fun DrawScope.drawSegmentedBar(
 
     /** The on colour for [index], tinted by whatever recurring animation runs. */
     fun animatedOnColor(index: Int): Color {
-        var color = onColor
+        var color = onColorOf(index)
         when (recurringAnimation) {
             RecurringAnimation.SHIMMER -> {
                 val head = -ShimmerBand + recurringPhase * (1f + 2f * ShimmerBand)

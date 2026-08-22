@@ -57,6 +57,7 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context, android.util.AttributeSet, int);
   public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context, android.util.AttributeSet, int, int);
   public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context, android.util.AttributeSet, int, int, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public final boolean hasDivisionColor(int);
   public final boolean isDividerEnabled();
   public final boolean isDivisionEnabled(int);
   public final boolean isTapToToggleEnabled();
@@ -77,6 +78,7 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public final int divisionAt(float);
   public final int getCompletedSegmentCount();
   public final int getDividerColor();
+  public final int getDivisionColor(int);
   public final int getDivisions();
   public final int getMaxHeight();
   public final int getMaxWidth();
@@ -88,6 +90,8 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public final long getAnimationDurationMs();
   public final long getEntryStaggerDelayMs();
   public final long getRecurringDurationMs();
+  public final void clearDivisionColor(int);
+  public final void clearDivisionColors();
   public final void disableDivision(int);
   public final void enableDivision(int);
   public final void reset();
@@ -98,6 +102,7 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public final void setDividerColor(int);
   public final void setDividerEnabled(boolean);
   public final void setDividerWidth(float);
+  public final void setDivisionColor(int, int);
   public final void setDivisionProgress(int, float);
   public final void setDivisions(int);
   public final void setEnabledDivisions(java.util.List<java.lang.Integer>);
