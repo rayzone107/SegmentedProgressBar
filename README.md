@@ -997,14 +997,17 @@ Regenerating this README's images after a rendering change:
 ./gradlew :app:testDebugUnitTest --tests '*DocsScreenshotTest*' -Pdocs
 ```
 
-Publishing a release:
+Publishing a release, in full, is [docs/PUBLISHING.md](docs/PUBLISHING.md). The
+short version, once a maintainer's machine is set up:
 
 ```bash
-git tag 2.0.0 && git push origin 2.0.0
+git tag 2.1.0 && git push origin 2.1.0                          # JitPack
+./gradlew publishAndReleaseToMavenCentral --no-configuration-cache   # Maven Central
 ```
 
 JitPack builds the tag on first request using [`jitpack.yml`](jitpack.yml), and
-publishes both artifacts from the one tag.
+publishes both artifacts from the one tag. Maven Central is published under
+`io.github.rayzone107`, signed, from the same build.
 
 ---
 

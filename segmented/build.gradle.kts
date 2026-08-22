@@ -2,12 +2,12 @@ plugins {
     // AGP 9 provides Kotlin compilation itself; applying org.jetbrains.kotlin.android
     // on top of it is now an error. See https://kotl.in/gradle/agp-built-in-kotlin
     alias(libs.plugins.android.library)
-    `maven-publish`
+    alias(libs.plugins.maven.publish)
 }
 
 // JitPack invokes the build with `-Pversion=<git tag>`; fall back to the value in
 // gradle.properties for local builds and `publishToMavenLocal` smoke tests.
-val libraryGroup = "com.github.rayzone107"
+val libraryGroup = "io.github.rayzone107"
 val libraryArtifact = "segmentedprogressbar"
 val libraryVersion = (findProperty("version") as? String)
     ?.takeUnless { it.isBlank() || it == "unspecified" }
@@ -45,11 +45,9 @@ android {
         buildConfig = false
     }
 
-    publishing {
-        singleVariant("release") {
-            withSourcesJar()
-        }
-    }
+    // No `publishing { singleVariant(...) }` here: the publish plugin selects the
+    // variant and adds the sources jar itself, and declaring both makes the two
+    // fight over the same publication.
 
     testOptions {
         unitTests {
@@ -92,45 +90,63 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
 }
 
-publishing {
-    publications {
-        register<MavenPublication>("release") {
-            groupId = libraryGroup
-            artifactId = libraryArtifact
-            version = libraryVersion
+mavenPublishing {
+    coordinates(libraryGroup, libraryArtifact, libraryVersion)
 
-            afterEvaluate {
-                from(components["release"])
-            }
+    // Sources and javadoc jars are both required by Maven Central. The javadoc
+    // one comes out as real Dokka-rendered KDoc rather than the empty
+    // placeholder Central also accepts, because AGP 9's built-in Kotlin does
+    // expose what Dokka needs here (unlike the binary-compatibility validator,
+    // which is why the API dump above is hand-rolled). That is what makes
+    // javadoc.io usable for this library.
+    configure(
+        com.vanniktech.maven.publish.AndroidSingleVariantLibrary(
+            variant = "release",
+            sourcesJar = true,
+            publishJavadocJar = true,
+        ),
+    )
 
-            pom {
-                name.set("SegmentedProgressBar")
-                description.set(
-                    "An Android progress bar split into independently togglable segments.",
-                )
-                url.set("https://github.com/rayzone107/SegmentedProgressBar")
-                inceptionYear.set("2016")
+    pom {
+        name.set("SegmentedProgressBar")
+        description.set(
+            "An Android progress bar split into independently togglable segments.",
+        )
+        url.set("https://github.com/rayzone107/SegmentedProgressBar")
+        inceptionYear.set("2016")
 
-                licenses {
-                    license {
-                        name.set("The Apache Software License, Version 2.0")
-                        url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
-                        distribution.set("repo")
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("rayzone107")
-                        name.set("Rachit Goyal")
-                        url.set("https://github.com/rayzone107")
-                    }
-                }
-                scm {
-                    url.set("https://github.com/rayzone107/SegmentedProgressBar")
-                    connection.set("scm:git:https://github.com/rayzone107/SegmentedProgressBar.git")
-                    developerConnection.set("scm:git:ssh://git@github.com/rayzone107/SegmentedProgressBar.git")
-                }
+        licenses {
+            license {
+                name.set("The Apache Software License, Version 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                distribution.set("repo")
             }
         }
+        developers {
+            developer {
+                id.set("rayzone107")
+                name.set("Rachit Goyal")
+                url.set("https://github.com/rayzone107")
+            }
+        }
+        scm {
+            url.set("https://github.com/rayzone107/SegmentedProgressBar")
+            connection.set("scm:git:https://github.com/rayzone107/SegmentedProgressBar.git")
+            developerConnection.set("scm:git:ssh://git@github.com/rayzone107/SegmentedProgressBar.git")
+        }
+    }
+
+    // Maven Central, through the Central Portal.
+    publishToMavenCentral()
+
+    // Central rejects unsigned artifacts, so a release must be signed; a local
+    // `publishToMavenLocal` must not need a key, since it is how the artifact
+    // set gets checked without one. Signing therefore turns itself on exactly
+    // when a key is configured, and credentials stay in ~/.gradle or the
+    // environment. Nothing signing-related ever belongs in this repository.
+    if (providers.gradleProperty("signingInMemoryKey").isPresent ||
+        providers.environmentVariable("ORG_GRADLE_PROJECT_signingInMemoryKey").isPresent
+    ) {
+        signAllPublications()
     }
 }

@@ -9,9 +9,15 @@
 jdk:
   - openjdk17
 
+# The publication is named `maven` (the publish plugin's own), so this is
+# publishToMavenLocal rather than a publish<Name>PublicationToMavenLocal task.
+# JitPack harvests whatever lands in the local repository and re-serves it under
+# its own com.github.rayzone107.SegmentedProgressBar coordinates, so the
+# io.github group these modules now declare for Maven Central does not change
+# what JitPack consumers ask for.
 install:
   - >-
     ./gradlew
-    :segmented:publishReleasePublicationToMavenLocal
-    :segmented-compose:publishReleasePublicationToMavenLocal
+    :segmented:publishToMavenLocal
+    :segmented-compose:publishToMavenLocal
     -x test --no-daemon

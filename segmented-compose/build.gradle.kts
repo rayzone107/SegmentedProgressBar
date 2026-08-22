@@ -1,12 +1,12 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.compose.compiler)
-    `maven-publish`
+    alias(libs.plugins.maven.publish)
 }
 
 // Published separately from :segmented so that View-only consumers never inherit
 // the Compose runtime. See segmented/build.gradle.kts for the version logic.
-val libraryGroup = "com.github.rayzone107"
+val libraryGroup = "io.github.rayzone107"
 val libraryArtifact = "segmentedprogressbar-compose"
 val libraryVersion = (findProperty("version") as? String)
     ?.takeUnless { it.isBlank() || it == "unspecified" }
@@ -40,11 +40,8 @@ android {
         compose = true
     }
 
-    publishing {
-        singleVariant("release") {
-            withSourcesJar()
-        }
-    }
+    // The publish plugin selects the variant and adds the sources jar; see
+    // segmented/build.gradle.kts.
 
     testOptions {
         unitTests {
@@ -94,46 +91,54 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
-publishing {
-    publications {
-        register<MavenPublication>("release") {
-            groupId = libraryGroup
-            artifactId = libraryArtifact
-            version = libraryVersion
+mavenPublishing {
+    coordinates(libraryGroup, libraryArtifact, libraryVersion)
 
-            afterEvaluate {
-                from(components["release"])
-            }
+    configure(
+        com.vanniktech.maven.publish.AndroidSingleVariantLibrary(
+            variant = "release",
+            sourcesJar = true,
+            publishJavadocJar = true,
+        ),
+    )
 
-            pom {
-                name.set("SegmentedProgressBar for Compose")
-                description.set(
-                    "Jetpack Compose bindings for SegmentedProgressBar, an Android progress " +
-                        "bar split into independently togglable segments.",
-                )
-                url.set("https://github.com/rayzone107/SegmentedProgressBar")
-                inceptionYear.set("2026")
+    pom {
+        name.set("SegmentedProgressBar for Compose")
+        description.set(
+            "Jetpack Compose bindings for SegmentedProgressBar, an Android progress " +
+                "bar split into independently togglable segments.",
+        )
+        url.set("https://github.com/rayzone107/SegmentedProgressBar")
+        inceptionYear.set("2026")
 
-                licenses {
-                    license {
-                        name.set("The Apache Software License, Version 2.0")
-                        url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
-                        distribution.set("repo")
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("rayzone107")
-                        name.set("Rachit Goyal")
-                        url.set("https://github.com/rayzone107")
-                    }
-                }
-                scm {
-                    url.set("https://github.com/rayzone107/SegmentedProgressBar")
-                    connection.set("scm:git:https://github.com/rayzone107/SegmentedProgressBar.git")
-                    developerConnection.set("scm:git:ssh://git@github.com/rayzone107/SegmentedProgressBar.git")
-                }
+        licenses {
+            license {
+                name.set("The Apache Software License, Version 2.0")
+                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                distribution.set("repo")
             }
         }
+        developers {
+            developer {
+                id.set("rayzone107")
+                name.set("Rachit Goyal")
+                url.set("https://github.com/rayzone107")
+            }
+        }
+        scm {
+            url.set("https://github.com/rayzone107/SegmentedProgressBar")
+            connection.set("scm:git:https://github.com/rayzone107/SegmentedProgressBar.git")
+            developerConnection.set("scm:git:ssh://git@github.com/rayzone107/SegmentedProgressBar.git")
+        }
+    }
+
+    publishToMavenCentral()
+
+    // See segmented/build.gradle.kts: signing switches on only when a key is
+    // configured, so a keyless local publish still works.
+    if (providers.gradleProperty("signingInMemoryKey").isPresent ||
+        providers.environmentVariable("ORG_GRADLE_PROJECT_signingInMemoryKey").isPresent
+    ) {
+        signAllPublications()
     }
 }

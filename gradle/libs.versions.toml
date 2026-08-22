@@ -9,6 +9,11 @@
 # `android.builtInKotlin=false` and apply the Kotlin plugin explicitly.
 agp = "9.3.1"
 
+# Publishes to Maven Central through the Central Portal: builds the bundle,
+# signs it, uploads it and releases it. Hand-rolling that would mean
+# implementing the Portal's upload and status-polling API in this build.
+mavenPublish = "0.37.0"
+
 # SDK levels, API 37 (Android 17) is the current stable platform.
 compileSdk = "37"
 targetSdk = "37"
@@ -67,3 +72,4 @@ truth = { module = "com.google.truth:truth", version.ref = "truth" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "composeCompiler" }
+maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "mavenPublish" }
