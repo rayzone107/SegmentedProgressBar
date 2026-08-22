@@ -83,8 +83,13 @@ Put them in `~/.gradle/gradle.properties`, which is outside the repository:
 mavenCentralUsername=<token username>
 mavenCentralPassword=<token password>
 
-# The armoured private key from step 2, as one line with \n for the newlines,
-# or as a file path via signingInMemoryKeyFile.
+# The armoured private key from step 2, on one line, with every newline written
+# as a literal \n. This command prints it in exactly that form:
+#
+#     gpg --armor --export-secret-keys <KEY_ID> | awk '{printf "%s\\n", $0}'
+#
+# The plugin reads only these three properties; there is no file-path variant.
+# signingInMemoryKeyId is needed only when the keyring holds more than one key.
 signingInMemoryKey=-----BEGIN PGP PRIVATE KEY BLOCK-----\n...\n-----END PGP PRIVATE KEY BLOCK-----
 signingInMemoryKeyPassword=<the key's passphrase>
 ```
