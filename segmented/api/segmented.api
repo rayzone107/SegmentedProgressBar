@@ -144,6 +144,7 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public static final long DEFAULT_ENTRY_STAGGER_DELAY_MS;
   public static final long DEFAULT_RECURRING_DURATION_MS;
   public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo);
+  public void onRtlPropertiesChanged(int);
   public void setBackgroundColor(int);
 }
 public final class com.rachitgoyal.segmented.SegmentedProgressBar$Companion {

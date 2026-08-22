@@ -280,6 +280,61 @@ class SegmentedProgressBarShadowTest {
         assertThat(shadowAt(bar, LIT_X, ABOVE_BAR_Y)).isGreaterThan(0)
     }
 
+    // region cache staleness
+    //
+    // The shadow renders through a cached bitmap, so the risky failure mode is
+    // no longer wrong pixels but STALE pixels: a silhouette change that the
+    // cache misses. Each test here renders the same instance twice, which is
+    // exactly the path that hits the cache.
+
+    @Test
+    fun `the shadow follows the lit set from one frame to the next`() {
+        val bar = newBar { shadowTarget = ShadowTarget.ON_SEGMENTS }
+
+        render(bar) // primes the cache with only division 1 lit
+        assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isEqualTo(0)
+
+        bar.enableDivision(3)
+
+        assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isGreaterThan(0)
+    }
+
+    @Test
+    fun `the shadow follows a partial fill from one frame to the next`() {
+        val bar = newBar {
+            shadowTarget = ShadowTarget.ON_SEGMENTS
+            progressBarBackgroundColor = Color.TRANSPARENT
+            enabledDivisions = emptyList()
+        }
+
+        render(bar)
+        assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isEqualTo(0)
+
+        // Division 3 spans 138.5..178; a 0.9 fill reaches under UNLIT_X at 158.
+        bar.setDivisionProgress(3, 0.9f)
+
+        assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isGreaterThan(0)
+    }
+
+    @Test
+    fun `the shadow follows a corner mode change from one frame to the next`() {
+        val bar = newBar {
+            cornerRadius = 15f
+            cornerMode = CornerMode.BAR_ENDS
+        }
+
+        render(bar)
+        val squareCorner = shadowAt(bar, LIT_X - 18, ABOVE_BAR_Y + 1)
+
+        bar.cornerMode = CornerMode.EACH_SEGMENT
+
+        // Rounding every cell pulls the silhouette in at each cell's corners,
+        // which must change what the blur reaches there.
+        assertThat(shadowAt(bar, LIT_X - 18, ABOVE_BAR_Y + 1)).isNotEqualTo(squareCorner)
+    }
+
+    // endregion
+
     @Test
     fun `the shadow fades outwards from the edge of the bar`() {
         val bar = newBar()

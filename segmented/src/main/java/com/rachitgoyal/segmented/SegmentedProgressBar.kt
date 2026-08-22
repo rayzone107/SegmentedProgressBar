@@ -2,6 +2,7 @@ package com.rachitgoyal.segmented
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
@@ -127,6 +128,27 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
 
     /** The part of that outline currently casting the shadow. */
     private val shadowCastPath = Path()
+
+    /**
+     * The rendered shadow, cached as a bitmap.
+     *
+     * A `Paint` shadow layer only renders on a software canvas, and the old
+     * approach, switching the whole view to `LAYER_TYPE_SOFTWARE`, meant every
+     * frame of a shimmer re-rasterised the entire view in software. The shadow
+     * is instead rendered once into this bitmap whenever the silhouette
+     * changes, and each frame just blits it, so recurring animations run fully
+     * hardware accelerated. The bitmap costs the same memory the software
+     * layer did; it exists only while [shadowRadius] is positive.
+     */
+    private var shadowCache: Bitmap? = null
+    private var shadowCacheCanvas: Canvas? = null
+
+    /** Set by anything that changes the bar's silhouette or the shadow itself. */
+    private var shadowCacheDirty = true
+
+    /** The padding the cache was rendered with, part of its validity check. */
+    private var shadowCachePaddingLeft = -1
+    private var shadowCachePaddingTop = -1
 
     /**
      * The two vertical bands the bar is drawn in, recomputed at the top of every
@@ -313,6 +335,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         set(@ColorInt value) {
             if (backgroundPaint.color == value) return
             backgroundPaint.color = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -356,6 +379,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             requireNonNegativeDimension(value, "dividerWidth")
             if (_dividerWidth == value) return
             _dividerWidth = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -369,6 +393,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         set(value) {
             if (_isDividerEnabled == value) return
             _isDividerEnabled = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -390,6 +415,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             requireNonNegativeDimension(value, "cornerRadius")
             if (_cornerRadius == value) return
             _cornerRadius = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -411,6 +437,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         set(value) {
             if (_cornerMode == value) return
             _cornerMode = value
+            invalidateShadowCache()
             invalidateOutline()
             invalidate()
         }
@@ -431,6 +458,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             requireRatio(value, "activeHeightRatio")
             if (_activeHeightRatio == value) return
             _activeHeightRatio = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -448,6 +476,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             requireRatio(value, "inactiveHeightRatio")
             if (_inactiveHeightRatio == value) return
             _inactiveHeightRatio = value
+            invalidateShadowCache()
             invalidateOutline()
             invalidate()
         }
@@ -462,19 +491,20 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      * as its neighbour and no cell is outlined by the shadow of the cell next to
      * it. [shadowTarget] chooses which segments contribute.
      *
-     * Enabling a shadow switches the view to a software layer, because Android
-     * ignores [Paint.setShadowLayer] for shapes on a hardware-accelerated
-     * canvas. That costs an off-screen bitmap the size of the view, which is
-     * cheap for a bar but is the reason this is off by default. For a shadow
-     * under the bar as a whole, prefer `android:elevation`: the view supplies a
-     * correctly rounded outline for it.
+     * The shadow renders into a cached bitmap that is rebuilt only when the
+     * bar's silhouette changes, and each frame just blits it, so the view stays
+     * fully hardware accelerated: a shimmer or pulse never re-rasterises
+     * anything. The bitmap is the size of the view and exists only while the
+     * radius is positive. For a shadow under the bar as a whole, prefer
+     * `android:elevation`: the view supplies a correctly rounded outline for
+     * it.
      *
      * The shadow is drawn *outside* the bar and never changes its size, so it
-     * needs somewhere to go: give the view padding. The software layer is the
-     * size of the view, so unlike an elevation shadow this one cannot escape the
-     * view's own bounds, and `android:clipChildren="false"` on the parent will
-     * not help. Changing [shadowRadius], [shadowDx] or [shadowDy] never moves or
-     * resizes the bar.
+     * needs somewhere to go: give the view padding. The cache bitmap is the
+     * size of the view, so unlike an elevation shadow this one cannot escape
+     * the view's own bounds, and `android:clipChildren="false"` on the parent
+     * will not help. Changing [shadowRadius], [shadowDx] or [shadowDy] never
+     * moves or resizes the bar.
      *
      * @throws IllegalArgumentException if [value] is negative or not finite.
      */
@@ -1000,6 +1030,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             }
             else -> {
                 partialFills.put(index, fraction)
+                invalidateShadowCache()
                 if (enabled.remove(index)) {
                     // Downgrading full to partial must not play the lit-to-off
                     // transition underneath the partial fill, so this division's
@@ -1461,6 +1492,11 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         playEntryAnimationIfNeeded()
     }
 
+    override fun onRtlPropertiesChanged(layoutDirection: Int) {
+        super.onRtlPropertiesChanged(layoutDirection)
+        invalidateShadowCache()
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         // The recurring loop drives itself from onDraw, and stops when detached
@@ -1503,10 +1539,17 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         segmentBand.radius =
             SegmentGeometry.clampCornerRadius(_cornerRadius, contentWidth, segmentBand.height)
 
+        // The shadow is blitted from a cache rendered only when the silhouette
+        // changes; a Paint shadow layer needs a software canvas, and rendering
+        // it once here is what lets the rest of the frame stay on hardware.
+        if (_shadowRadius > 0f) {
+            ensureShadowCache(contentWidth, dividerSpan, isRtl, now)
+            shadowCache?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+        }
+
         val saveCount = canvas.save()
         canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
 
-        drawShadows(canvas, contentWidth, dividerSpan, isRtl, now)
         drawTrack(canvas, contentWidth, dividerSpan, isRtl)
         drawSegments(canvas, contentWidth, dividerSpan, isRtl, now)
 
@@ -1533,6 +1576,51 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         canvas.restoreToCount(saveCount)
 
         if (hasRunningAnimation(now) || isRecurringRunning) postInvalidateOnAnimation()
+    }
+
+    /**
+     * Renders the shadow into [shadowCache] if anything about it has changed.
+     *
+     * Rebuild triggers, in order of how often they fire: a running toggle or
+     * entry transition (a GROW changes the silhouette every frame, so the cache
+     * follows it), an explicit [shadowCacheDirty] from a setter, and a size or
+     * padding change. Recurring animations never rebuild, which is the point:
+     * a shimmer only tints fills, so its frames blit the same bitmap.
+     */
+    private fun ensureShadowCache(
+        contentWidth: Float,
+        dividerSpan: Float,
+        isRtl: Boolean,
+        now: Long,
+    ) {
+        var cache = shadowCache
+        val stale = cache == null ||
+            cache.width != width ||
+            cache.height != height ||
+            shadowCachePaddingLeft != paddingLeft ||
+            shadowCachePaddingTop != paddingTop ||
+            shadowCacheDirty ||
+            hasRunningAnimation(now)
+        if (!stale) return
+
+        if (cache == null || cache.width != width || cache.height != height) {
+            shadowCache?.recycle()
+            cache = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            shadowCache = cache
+            shadowCacheCanvas = Canvas(cache)
+        } else {
+            cache.eraseColor(Color.TRANSPARENT)
+        }
+
+        val cacheCanvas = checkNotNull(shadowCacheCanvas)
+        val saveCount = cacheCanvas.save()
+        cacheCanvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
+        drawShadows(cacheCanvas, contentWidth, dividerSpan, isRtl, now)
+        cacheCanvas.restoreToCount(saveCount)
+
+        shadowCachePaddingLeft = paddingLeft
+        shadowCachePaddingTop = paddingTop
+        shadowCacheDirty = false
     }
 
     /**
@@ -2099,15 +2187,26 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             shadowPaint.setShadowLayer(_shadowRadius, _shadowDx, _shadowDy, _shadowColor)
         } else {
             shadowPaint.clearShadowLayer()
+            // Give the cache's memory back the moment it stops earning it.
+            shadowCache?.recycle()
+            shadowCache = null
+            shadowCacheCanvas = null
         }
+        shadowCacheDirty = true
+        invalidate()
+    }
 
-        // Android drops Paint shadow layers for shapes on a hardware accelerated
-        // canvas, so the view has to render into a software layer for the shadow
-        // to appear at all. The layer also bounds the shadow: it is the size of
-        // the view, so a shadow needs room from padding rather than from the
-        // parent.
-        val wanted = if (_shadowRadius > 0f) LAYER_TYPE_SOFTWARE else LAYER_TYPE_NONE
-        if (layerType != wanted) setLayerType(wanted, null)
+    /**
+     * Marks the shadow cache stale.
+     *
+     * Called by every setter whose value shapes the silhouette: geometry,
+     * corner treatment, band heights, the lit set, partial fills, and the track
+     * colour's transparency, which decides whether the track is part of the
+     * silhouette at all. Cheap enough to call unconditionally; the rebuild
+     * happens lazily on the next frame that actually has a shadow.
+     */
+    private fun invalidateShadowCache() {
+        shadowCacheDirty = true
     }
 
     /**
@@ -2358,6 +2457,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         activeTransitionStyle = _segmentAnimation
         animDelay.fill(0L)
         syncAnimationTargets()
+        invalidateShadowCache()
         // The virtual accessibility tree mirrors divisions and their checked
         // state, so any change here invalidates it wholesale.
         divisionTouchHelper?.invalidateRoot()

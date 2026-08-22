@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,7 +22,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -221,8 +223,14 @@ public fun SegmentedProgressBar(
                     ProgressBarRangeInfo(onCount.toFloat(), 0f..divisions.toFloat(), divisions)
             }
             .then(clickModifier)
-            .drawBehind {
-                drawSegmentedBar(
+            // drawWithCache, not drawBehind: the geometry and the shadow's
+            // paths are built here, at cache-build time, and survive across
+            // frames. State read during the build (the animation fractions)
+            // invalidates the cache exactly when the silhouette changes; the
+            // recurring phase is read only inside the draw pass below, so a
+            // shimmer redraws without rebuilding a single path.
+            .drawWithCache {
+                val renderer = BarRenderer(
                     divisions = divisions,
                     fractionOf = { index -> animation.fractions[index] ?: 0f },
                     partialOf = { index ->
@@ -239,12 +247,21 @@ public fun SegmentedProgressBar(
                     onSegments = enabledSegments,
                     activeHeightFraction = activeHeightFraction,
                     inactiveHeightFraction = inactiveHeightFraction,
-                    shadow = shadow,
                     recurringAnimation = recurringAnimation,
-                    recurringPhase = recurringPhase,
                     shimmerColor = shimmerColor,
                     isRtl = isRtl,
+                    size = size,
                 )
+                val shadowRender = renderer.buildShadow(
+                    shadow = shadow,
+                    blurPx = shadow?.radius?.toPx() ?: 0f,
+                    dxPx = shadow?.dx?.toPx() ?: 0f,
+                    dyPx = shadow?.dy?.toPx() ?: 0f,
+                )
+                onDrawBehind {
+                    shadowRender?.drawInto(this)
+                    with(renderer) { drawBar(recurringPhase.value) }
+                }
             },
     ) {
         if (perSegmentAccessibility) {
@@ -579,15 +596,24 @@ private suspend fun animateSegments(
     }
 }
 
-/** Phase of the recurring loop, `0` to `1`, or `0` when nothing is running. */
+/**
+ * Phase of the recurring loop, `0` to `1`, or a constant `0` when nothing runs.
+ *
+ * Returned as [State] rather than a value on purpose: reading the phase during
+ * composition would recompose the whole bar sixty times a second for as long
+ * as a shimmer runs. Read only inside the draw pass, a phase change costs a
+ * redraw and nothing else.
+ */
 @Composable
 private fun rememberRecurringPhase(
     recurringAnimation: RecurringAnimation,
     recurringDurationMillis: Int,
-): Float {
-    if (recurringAnimation == RecurringAnimation.NONE) return 0f
+): State<Float> {
+    if (recurringAnimation == RecurringAnimation.NONE) {
+        return remember { mutableFloatStateOf(0f) }
+    }
     val transition = rememberInfiniteTransition(label = "spb-recurring")
-    val phase by transition.animateFloat(
+    return transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -595,7 +621,6 @@ private fun rememberRecurringPhase(
         ),
         label = "spb-recurring-phase",
     )
-    return phase
 }
 
 // endregion
@@ -607,56 +632,65 @@ private const val PulseMinAlpha = 0.45f
 private const val ShadowSteps = 8
 
 /**
- * Draws the bar.
+ * Everything needed to draw the bar at one size, built once per draw cache.
  *
  * Deliberately a mirror of the View's `onDraw`, using the same [SegmentGeometry]
  * calls in the same order, so a change to the layout maths lands in both
  * renderers at once.
+ *
+ * A class rather than one long draw function so that [buildShadow] can run at
+ * `drawWithCache` build time, where its paths survive across frames, while
+ * [drawBar] runs per frame. The split is what lets a shimmer redraw sixty times
+ * a second without rebuilding a single shadow path: the phase only tints fill
+ * colours, never shapes.
  */
-@Suppress("LongParameterList", "LongMethod", "CyclomaticComplexMethod")
-private fun DrawScope.drawSegmentedBar(
-    divisions: Int,
-    fractionOf: (Int) -> Float,
-    partialOf: (Int) -> Float,
-    transitionStyle: SegmentAnimation,
-    onColorOf: (Int) -> Color,
-    offColor: Color,
+@Suppress("LongParameterList")
+private class BarRenderer(
+    private val divisions: Int,
+    private val fractionOf: (Int) -> Float,
+    private val partialOf: (Int) -> Float,
+    private val transitionStyle: SegmentAnimation,
+    private val onColorOf: (Int) -> Color,
+    private val offColor: Color,
     gapPx: Float,
-    gapColor: Color,
+    private val gapColor: Color,
     cornerRadiusPx: Float,
-    cornerMode: CornerMode,
-    onSegments: Set<Int>,
+    private val cornerMode: CornerMode,
+    private val onSegments: Set<Int>,
     activeHeightFraction: Float,
     inactiveHeightFraction: Float,
-    shadow: SegmentShadow?,
-    recurringAnimation: RecurringAnimation,
-    recurringPhase: Float,
-    shimmerColor: Color,
-    isRtl: Boolean,
+    private val recurringAnimation: RecurringAnimation,
+    private val shimmerColor: Color,
+    private val isRtl: Boolean,
+    size: Size,
 ) {
     // The bar always occupies the whole box. A shadow is drawn outside it and
     // never insets it, so enabling one, or changing its blur or offset, cannot
     // move or resize the bar.
-    val barWidth = size.width
-    val barHeight = size.height
-    if (barWidth <= 0f || barHeight <= 0f) return
+    private val barWidth = size.width
+    private val barHeight = size.height
 
-    val gapSpan = SegmentGeometry.effectiveDividerWidth(
+    private val gapSpan = SegmentGeometry.effectiveDividerWidth(
         width = barWidth,
         divisions = divisions,
         requested = gapPx,
         enabled = gapPx > 0f,
     )
 
-    val trackHeight = barHeight * inactiveHeightFraction
-    val trackTop = (barHeight - trackHeight) / 2f
-    val segmentHeight = barHeight * activeHeightFraction
-    val segmentTop = (barHeight - segmentHeight) / 2f
+    private val trackHeight = barHeight * inactiveHeightFraction
+    private val trackTop = (barHeight - trackHeight) / 2f
+    private val segmentHeight = barHeight * activeHeightFraction
+    private val segmentTop = (barHeight - segmentHeight) / 2f
 
-    val trackRadius = SegmentGeometry.clampCornerRadius(cornerRadiusPx, barWidth, trackHeight)
-    val segmentRadius = SegmentGeometry.clampCornerRadius(cornerRadiusPx, barWidth, segmentHeight)
+    private val trackRadius =
+        SegmentGeometry.clampCornerRadius(cornerRadiusPx, barWidth, trackHeight)
+    private val segmentRadius =
+        SegmentGeometry.clampCornerRadius(cornerRadiusPx, barWidth, segmentHeight)
 
-    fun spanOf(index: Int): Pair<Float, Float> {
+    private val hasTrack = trackHeight > 0f && offColor.alpha > 0f
+    private val hasSegments = segmentHeight > 0f
+
+    private fun spanOf(index: Int): Pair<Float, Float> {
         var left = SegmentGeometry.segmentLeft(barWidth, divisions, gapSpan, index)
         var right = SegmentGeometry.segmentRight(barWidth, divisions, gapSpan, index)
         if (isRtl) {
@@ -668,14 +702,14 @@ private fun DrawScope.drawSegmentedBar(
     }
 
     /** Applies a GROW transition, shortening the span from its trailing edge. */
-    fun grownSpan(span: Pair<Float, Float>, fraction: Float): Pair<Float, Float> {
+    private fun grownSpan(span: Pair<Float, Float>, fraction: Float): Pair<Float, Float> {
         if (transitionStyle != SegmentAnimation.GROW || fraction >= 1f) return span
         val (left, right) = span
         val width = (right - left) * fraction
         return if (isRtl) (right - width) to right else left to (left + width)
     }
 
-    fun cornersOf(index: Int, forSegment: Boolean): Pair<Boolean, Boolean> {
+    private fun cornersOf(index: Int, forSegment: Boolean): Pair<Boolean, Boolean> {
         val roundsStart: Boolean
         val roundsEnd: Boolean
         // A track cell with a segment over it takes that segment's rounding.
@@ -700,16 +734,13 @@ private fun DrawScope.drawSegmentedBar(
         return if (isRtl) roundsEnd to roundsStart else roundsStart to roundsEnd
     }
 
-    val hasTrack = trackHeight > 0f && offColor.alpha > 0f
-    val hasSegments = segmentHeight > 0f
-
     /**
      * Which sides of segment [index] would be rounded if it stood alone.
      *
      * A partial fill uses this rather than [cornersOf]: an in-progress segment
      * is not part of the run beside it, so it draws as its own pill.
      */
-    fun standaloneCornersOf(index: Int): Pair<Boolean, Boolean> {
+    private fun standaloneCornersOf(index: Int): Pair<Boolean, Boolean> {
         val roundsStart: Boolean
         val roundsEnd: Boolean
         when (cornerMode) {
@@ -726,7 +757,7 @@ private fun DrawScope.drawSegmentedBar(
     }
 
     /** The on colour for [index], tinted by whatever recurring animation runs. */
-    fun animatedOnColor(index: Int): Color {
+    private fun animatedOnColor(index: Int, recurringPhase: Float): Color {
         var color = onColorOf(index)
         when (recurringAnimation) {
             RecurringAnimation.SHIMMER -> {
@@ -746,10 +777,31 @@ private fun DrawScope.drawSegmentedBar(
         return color
     }
 
-    // The bar casts one shadow, shaped like its silhouette, drawn before any fill.
-    // See drawSoftShadow for why it is built as a single shape per pass rather than
-    // one per cell, and why the outline is clipped out of it.
-    if (shadow != null && shadow.radius.value > 0f) {
+    /**
+     * Builds the bar's shadow as retained paths: the outline to clip out, and
+     * one grown copy of the caster per blur step.
+     *
+     * The bar casts one shadow, shaped like its silhouette. Within a pass,
+     * overlapping shapes in one path fill as their union, so nothing can
+     * accumulate; drawn as separate paths they would add, which made a lit
+     * segment twice as dark as an unlit one and grew a dark tick over every
+     * gap. The outline is clipped out at draw time because the steps are
+     * filled shapes: unclipped, the stack covers its own footprint at full
+     * shadow alpha, which showed through anti-aliased fill edges as a dark
+     * outline and through anything translucent as dirt.
+     *
+     * Each of the [ShadowSteps] copies carries `1 / ShadowSteps` of the
+     * shadow's alpha, so at the shape the accumulated opacity is the colour's
+     * own, falling off to nothing at the full blur distance. Stacked outsets
+     * rather than a `BlurEffect` layer, which clips the blur at the layer's
+     * bounds; these overflow the composable freely and need no API gate.
+     */
+    fun buildShadow(shadow: SegmentShadow?, blurPx: Float, dxPx: Float, dyPx: Float): ShadowRender? {
+        if (shadow == null || blurPx <= 0f) return null
+        if (barWidth <= 0f || barHeight <= 0f) return null
+        val stepAlpha = shadow.color.alpha / ShadowSteps
+        if (stepAlpha <= 0f) return null
+
         val wantsOff = shadow.target == ShadowTarget.OFF_SEGMENTS ||
             shadow.target == ShadowTarget.ALL
         val wantsOn = shadow.target == ShadowTarget.ON_SEGMENTS ||
@@ -856,133 +908,120 @@ private fun DrawScope.drawSegmentedBar(
             return path
         }
 
-        val caster = Path()
-        clipPath(outlineInto(Path(), spread = 0f, casters = false), ClipOp.Difference) {
-            drawSoftShadow(shadow) { spread -> outlineInto(caster, spread, casters = true) }
-        }
+        return ShadowRender(
+            clip = outlineInto(Path(), spread = 0f, casters = false),
+            steps = (ShadowSteps downTo 1).map { step ->
+                outlineInto(Path(), spread = blurPx * step / ShadowSteps, casters = true)
+            },
+            color = shadow.color.copy(alpha = stepAlpha),
+            dx = dxPx,
+            dy = dyPx,
+        )
     }
 
-    // Off segments, cell by cell, so the gap is genuinely empty.
-    if (hasTrack) {
-        for (index in 0 until divisions) {
-            val (left, right) = spanOf(index)
-            if (right - left <= 0f) continue
-            val (roundLeft, roundRight) = cornersOf(index, forSegment = false)
-            drawSpan(
-                left, right, trackTop, trackHeight,
-                roundLeft, roundRight, trackRadius, offColor,
-            )
-        }
-    }
+    /** Draws everything except the shadow, which [ShadowRender.drawInto] blits. */
+    fun DrawScope.drawBar(recurringPhase: Float) {
+        if (barWidth <= 0f || barHeight <= 0f) return
 
-    // On segments, and the partial fill of any segment that is underway.
-    if (hasSegments) {
-        for (index in 0 until divisions) {
-            val fraction = fractionOf(index)
-            if (fraction <= 0f) {
-                val fill = partialOf(index)
-                if (fill <= 0f) continue
-
-                val (cellLeft, cellRight) = spanOf(index)
-                if (cellRight - cellLeft <= 0f) continue
-
-                // The fill covers the leading part of the cell, clipped to the
-                // shape the cell would have as a standalone lit segment. The
-                // clip is what keeps every corner mode honest: without it, a
-                // fill approaching 1 under a large radius pokes its square cut
-                // edge out past the cell's rounded silhouette.
-                val (roundLeft, roundRight) = standaloneCornersOf(index)
-                val cellShape = Path().apply {
-                    addRoundRect(
-                        roundRectOf(
-                            cellLeft, cellRight, segmentTop, segmentHeight,
-                            roundLeft, roundRight, segmentRadius,
-                        ),
-                    )
-                }
-                val width = (cellRight - cellLeft) * fill
-                val fillLeft = if (isRtl) cellRight - width else cellLeft
-                clipPath(cellShape) {
-                    drawRect(
-                        color = animatedOnColor(index),
-                        topLeft = Offset(fillLeft, segmentTop),
-                        size = Size(width, segmentHeight),
-                    )
-                }
-                continue
+        // Off segments, cell by cell, so the gap is genuinely empty.
+        if (hasTrack) {
+            for (index in 0 until divisions) {
+                val (left, right) = spanOf(index)
+                if (right - left <= 0f) continue
+                val (roundLeft, roundRight) = cornersOf(index, forSegment = false)
+                drawSpan(
+                    left, right, trackTop, trackHeight,
+                    roundLeft, roundRight, trackRadius, offColor,
+                )
             }
-
-            val (left, right) = grownSpan(spanOf(index), fraction)
-            if (right - left <= 0f) continue
-
-            var color = animatedOnColor(index)
-            if (transitionStyle == SegmentAnimation.FADE && fraction < 1f) {
-                color = color.copy(alpha = color.alpha * fraction)
-            }
-
-            val (roundLeft, roundRight) = cornersOf(index, forSegment = true)
-            drawSpan(
-                left, right, segmentTop, segmentHeight,
-                roundLeft, roundRight, segmentRadius, color,
-            )
         }
-    }
 
-    // A painted divider, only when the gap has been given a colour.
-    if (gapSpan > 0f && gapColor.alpha > 0f) {
-        val top = minOf(trackTop, segmentTop)
-        val bottom = maxOf(trackTop + trackHeight, segmentTop + segmentHeight)
-        for (index in 1 until divisions) {
-            val left = SegmentGeometry.dividerLeft(barWidth, divisions, gapSpan, index)
-            val right = SegmentGeometry.dividerRight(barWidth, divisions, gapSpan, index)
-            drawRect(
-                color = gapColor,
-                topLeft = Offset(left, top),
-                size = Size(right - left, bottom - top),
-            )
+        // On segments, and the partial fill of any segment that is underway.
+        if (hasSegments) {
+            for (index in 0 until divisions) {
+                val fraction = fractionOf(index)
+                if (fraction <= 0f) {
+                    val fill = partialOf(index)
+                    if (fill <= 0f) continue
+
+                    val (cellLeft, cellRight) = spanOf(index)
+                    if (cellRight - cellLeft <= 0f) continue
+
+                    // The fill covers the leading part of the cell, clipped to the
+                    // shape the cell would have as a standalone lit segment. The
+                    // clip is what keeps every corner mode honest: without it, a
+                    // fill approaching 1 under a large radius pokes its square cut
+                    // edge out past the cell's rounded silhouette.
+                    val (roundLeft, roundRight) = standaloneCornersOf(index)
+                    val cellShape = Path().apply {
+                        addRoundRect(
+                            roundRectOf(
+                                cellLeft, cellRight, segmentTop, segmentHeight,
+                                roundLeft, roundRight, segmentRadius,
+                            ),
+                        )
+                    }
+                    val width = (cellRight - cellLeft) * fill
+                    val fillLeft = if (isRtl) cellRight - width else cellLeft
+                    clipPath(cellShape) {
+                        drawRect(
+                            color = animatedOnColor(index, recurringPhase),
+                            topLeft = Offset(fillLeft, segmentTop),
+                            size = Size(width, segmentHeight),
+                        )
+                    }
+                    continue
+                }
+
+                val (left, right) = grownSpan(spanOf(index), fraction)
+                if (right - left <= 0f) continue
+
+                var color = animatedOnColor(index, recurringPhase)
+                if (transitionStyle == SegmentAnimation.FADE && fraction < 1f) {
+                    color = color.copy(alpha = color.alpha * fraction)
+                }
+
+                val (roundLeft, roundRight) = cornersOf(index, forSegment = true)
+                drawSpan(
+                    left, right, segmentTop, segmentHeight,
+                    roundLeft, roundRight, segmentRadius, color,
+                )
+            }
+        }
+
+        // A painted divider, only when the gap has been given a colour.
+        if (gapSpan > 0f && gapColor.alpha > 0f) {
+            val top = minOf(trackTop, segmentTop)
+            val bottom = maxOf(trackTop + trackHeight, segmentTop + segmentHeight)
+            for (index in 1 until divisions) {
+                val left = SegmentGeometry.dividerLeft(barWidth, divisions, gapSpan, index)
+                val right = SegmentGeometry.dividerRight(barWidth, divisions, gapSpan, index)
+                drawRect(
+                    color = gapColor,
+                    topLeft = Offset(left, top),
+                    size = Size(right - left, bottom - top),
+                )
+            }
         }
     }
 }
 
 /**
- * Approximates a blurred shadow by stacking grown copies of [outlineAt].
- *
- * Compose has no `Paint` shadow layer, and the obvious alternative, a
- * `graphicsLayer` carrying a `BlurEffect`, clips the blur to the layer's bounds.
- * That both forced the bar to be inset and left a visible pale seam where the blur
- * faded out against the layer edge. Stacked outsets have neither problem, need no
- * API-level gate, and can overflow the composable freely.
- *
- * Each of the [ShadowSteps] passes carries `1 / ShadowSteps` of the shadow's alpha,
- * so where all of them overlap, right at the shape, the accumulated opacity is the
- * shadow colour's own, falling off to nothing at the full blur distance.
- *
- * Two rules the caller has to hold up, both of which were visible bugs before they
- * were understood:
- *
- * 1. [outlineAt] must return the *whole* caster as one path, not one shape per
- *    call. Within a pass, overlapping shapes in a single path fill as their union,
- *    so nothing can accumulate; drawn as separate paths, they add, which made a lit
- *    segment twice as dark as an unlit one and grew a dark tick above and below
- *    every gap where two neighbouring blurs met.
- * 2. This has to run inside a clip that excludes the bar's outline, since the
- *    passes are filled shapes. The stack covers its own footprint at full shadow
- *    alpha, which showed through every anti-aliased fill edge as a dark outline,
- *    and through anything translucent as dirt.
+ * A fully built shadow: paths that live as long as the draw cache, blitted each
+ * frame.
  */
-private fun DrawScope.drawSoftShadow(
-    shadow: SegmentShadow,
-    outlineAt: (spread: Float) -> Path,
+private class ShadowRender(
+    private val clip: Path,
+    private val steps: List<Path>,
+    private val color: Color,
+    private val dx: Float,
+    private val dy: Float,
 ) {
-    val blur = shadow.radius.toPx()
-    if (blur <= 0f) return
-    val stepAlpha = shadow.color.alpha / ShadowSteps
-    if (stepAlpha <= 0f) return
-    val color = shadow.color.copy(alpha = stepAlpha)
-
-    translate(left = shadow.dx.toPx(), top = shadow.dy.toPx()) {
-        for (step in ShadowSteps downTo 1) {
-            drawPath(outlineAt(blur * step / ShadowSteps), color)
+    fun drawInto(scope: DrawScope): Unit = with(scope) {
+        clipPath(clip, ClipOp.Difference) {
+            translate(left = dx, top = dy) {
+                steps.forEach { drawPath(it, color) }
+            }
         }
     }
 }

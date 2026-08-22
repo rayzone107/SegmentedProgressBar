@@ -339,19 +339,12 @@ class SegmentedProgressBarVariantsTest {
     }
 
     @Test
-    fun `enabling a shadow switches the view to a software layer`() {
-        // Android ignores Paint shadow layers for shapes on a hardware canvas,
-        // so without this the shadow would silently not render.
+    fun `enabling a shadow no longer forces a software layer`() {
+        // Regression, inverted from 2.0.0: the shadow used to switch the whole
+        // view to LAYER_TYPE_SOFTWARE, which re-rasterised every frame of a
+        // shimmer in software. It renders through a cached bitmap now, so the
+        // view stays on the hardware pipeline.
         val bar = newBar { shadowRadius = 6f }
-
-        assertThat(bar.layerType).isEqualTo(View.LAYER_TYPE_SOFTWARE)
-    }
-
-    @Test
-    fun `clearing the shadow releases the software layer`() {
-        val bar = newBar { shadowRadius = 6f }
-
-        bar.shadowRadius = 0f
 
         assertThat(bar.layerType).isEqualTo(View.LAYER_TYPE_NONE)
     }
@@ -369,7 +362,6 @@ class SegmentedProgressBarVariantsTest {
         assertThat(bar.shadowDx).isEqualTo(2f)
         assertThat(bar.shadowDy).isEqualTo(3f)
         assertThat(bar.shadowColor).isEqualTo(Color.BLUE)
-        assertThat(bar.layerType).isEqualTo(View.LAYER_TYPE_SOFTWARE)
     }
 
     @Test
@@ -453,20 +445,15 @@ class SegmentedProgressBarVariantsTest {
     }
 
     @Test
-    fun `the shadow target selects which paints carry a shadow layer`() {
-        // Asserted through layerType, which is the observable consequence: the
-        // view only needs a software layer while something is casting a shadow.
+    fun `the shadow target round-trips through every value`() {
         val bar = newBar { shadowRadius = 6f }
-        assertThat(bar.layerType).isEqualTo(View.LAYER_TYPE_SOFTWARE)
+        assertThat(bar.shadowTarget).isEqualTo(ShadowTarget.ALL)
 
         bar.shadowTarget = ShadowTarget.ON_SEGMENTS
-        assertThat(bar.layerType).isEqualTo(View.LAYER_TYPE_SOFTWARE)
+        assertThat(bar.shadowTarget).isEqualTo(ShadowTarget.ON_SEGMENTS)
 
         bar.shadowTarget = ShadowTarget.OFF_SEGMENTS
-        assertThat(bar.layerType).isEqualTo(View.LAYER_TYPE_SOFTWARE)
-
-        bar.shadowRadius = 0f
-        assertThat(bar.layerType).isEqualTo(View.LAYER_TYPE_NONE)
+        assertThat(bar.shadowTarget).isEqualTo(ShadowTarget.OFF_SEGMENTS)
     }
 
     @Test
