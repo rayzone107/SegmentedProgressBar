@@ -19,7 +19,8 @@ supports below API 26, you cannot use 2.0.0.
 
 ```
 Manifest merger failed : uses-sdk:minSdkVersion 21 cannot be smaller than
-version 26 declared in library [com.github.rayzone107:segmentedprogressbar:2.0.0]
+version 26 declared in library
+[com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar:2.0.0]
 ```
 
 There is no workaround other than raising your own `minSdk`, or staying on 0.0.1.
@@ -130,13 +131,31 @@ bar.divisions = 10        // indices 3 and 7 are now revealed
 
 ## 9. Dependency coordinate
 
-The 0.0.1 README documented the coordinate as
-`com.github.rayzone107:durationview:0.0.1`, which was a copy-paste error from
-another project. The correct 2.0.0 coordinate is:
+The 2.0.0 coordinate is:
 
 ```kotlin
-implementation("com.github.rayzone107:segmentedprogressbar:2.0.0")
+implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar:2.0.0")
 ```
+
+Note the **dot** before the repository name. That is how JitPack addresses a
+repository publishing more than one artifact, which this one now does. The
+artifact id itself is unchanged.
+
+`com.github.rayzone107:segmentedprogressbar` also resolves, since JitPack reads
+the artifact id as a repository name and this repository happens to be called
+that, but there is no repository named `segmentedprogressbar-compose`, so the
+Compose artifact needs the dotted group. Using it for both keeps them consistent.
+
+Whatever you had before was probably not working anyway:
+
+- The 0.0.1 README documented the coordinate as
+  `com.github.rayzone107:durationview:0.0.1`, a copy-paste error naming a
+  different library of mine entirely.
+- The version was never `0.0.1` as far as JitPack is concerned. It serves by git
+  tag, and the tags on this repository are `1.00`, `1.01` and `tag_v1`. The `1.01`
+  build failed even at the time.
+- None of them resolve today. JitPack rebuilds on request, and the 2018 build
+  cannot run on current infrastructure.
 
 ## 10. Things that did *not* change
 
@@ -194,7 +213,7 @@ remaining caveat is that a drop shadow forces a software layer.
 There is now a second artifact if you want a Composable rather than a View:
 
 ```kotlin
-implementation("com.github.rayzone107:segmentedprogressbar-compose:2.0.0")
+implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar-compose:2.0.0")
 ```
 
 It shares the option enums and the layout maths with the View, so the two render
