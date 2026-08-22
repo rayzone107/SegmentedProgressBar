@@ -69,6 +69,7 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public final float getActiveHeightRatio();
   public final float getCornerRadius();
   public final float getDividerWidth();
+  public final float getDivisionProgress(int);
   public final float getInactiveHeightRatio();
   public final float getShadowDx();
   public final float getShadowDy();
@@ -97,6 +98,7 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public final void setDividerColor(int);
   public final void setDividerEnabled(boolean);
   public final void setDividerWidth(float);
+  public final void setDivisionProgress(int, float);
   public final void setDivisions(int);
   public final void setEnabledDivisions(java.util.List<java.lang.Integer>);
   public final void setEntryAnimation(com.rachitgoyal.segmented.EntryAnimation);
