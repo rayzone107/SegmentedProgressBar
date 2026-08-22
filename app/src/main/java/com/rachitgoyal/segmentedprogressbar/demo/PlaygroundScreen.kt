@@ -129,6 +129,7 @@ private class PlaygroundState {
     var shadowTarget by mutableStateOf(ShadowTarget.ALL)
 
     var tapToToggle by mutableStateOf(true)
+    var perSegmentA11y by mutableStateOf(false)
 
     var segmentAnimation by mutableStateOf(SegmentAnimation.FADE)
     var entryAnimation by mutableStateOf(EntryAnimation.STAGGER)
@@ -234,6 +235,7 @@ private fun PinnedPreview(state: PlaygroundState) {
                         recurringAnimation = state.recurring,
                         animationDurationMillis = state.durationMs,
                         recurringDurationMillis = state.recurringMs,
+                        perSegmentAccessibility = state.perSegmentA11y,
                         // Compose holds the lit set outside the bar, so an
                         // interactive bar is one with a click handler and a
                         // read-only one is one without.
@@ -296,6 +298,11 @@ private fun SegmentsCard(state: PlaygroundState) {
         ToggleRow(label = "Tapping a segment toggles it", checked = state.tapToToggle) {
             state.tapToToggle = it
         }
+
+        ToggleRow(
+            label = "Each segment is its own accessibility node",
+            checked = state.perSegmentA11y,
+        ) { state.perSegmentA11y = it }
     }
 }
 

@@ -133,6 +133,26 @@ class DocsScreenshotTest {
         "state-all" to { enabledDivisions = (0 until 10).toList() },
         "state-none" to { enabledDivisions = emptyList() },
         "rtl" to { layoutDirection = View.LAYOUT_DIRECTION_RTL },
+        // The stories pattern: two chapters done, the third 40% through.
+        "partial" to {
+            divisions = 5
+            enabledDivisions = listOf(0, 1)
+            setDivisionProgress(2, 0.4f)
+            dividerWidth = dp(4).toFloat()
+            cornerRadius = dp(4).toFloat()
+        },
+        // A heatmap: every division on, each with its own colour.
+        "heatmap" to {
+            divisions = 14
+            enabledDivisions = (0 until 14).toList()
+            cornerMode = CornerMode.EACH_SEGMENT
+            cornerRadius = dp(5).toFloat()
+            progressBarBackgroundColor = 0xFFEDEFF2.toInt()
+            val shades = listOf(0xFFDDF2E4, 0xFF9BDFB2, 0xFF3FB868, 0xFF12813C).map { it.toInt() }
+            listOf(1, 3, 0, 2, 3, 1, 0, 0, 2, 3, 3, 1, 2, 0).forEachIndexed { index, level ->
+                setDivisionColor(index, shades[level])
+            }
+        },
     )
 
     /** The three bars stacked in the README's header image. */

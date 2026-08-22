@@ -36,7 +36,9 @@ so none of them can drift away from what the code actually draws.
   - [Letting users tap segments](#letting-users-tap-segments)
 - [Configuration in detail](#configuration-in-detail)
   - [Segments and selection](#segments-and-selection)
+  - [Partial fills](#partial-fills)
   - [Colours](#colours)
+  - [Per-division colours](#per-division-colours)
   - [Space between segments](#space-between-segments)
   - [Rounded edges](#rounded-edges)
   - [Segment heights](#segment-heights)
@@ -76,10 +78,10 @@ Then take whichever artifacts you need:
 ```kotlin
 dependencies {
     // The View. No Compose dependency.
-    implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar:2.0.0")
+    implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar:2.1.0")
 
     // Optional: the Jetpack Compose bindings.
-    implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar-compose:2.0.0")
+    implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar-compose:2.1.0")
 }
 ```
 
@@ -229,6 +231,9 @@ because Compose conventions differ:
 | Sizing | `layout_height`, `spb_maxWidth` | `Modifier` |
 | Drop shadow | `shadowRadius` and friends, which force a software layer and confine the blur to the view | a `SegmentShadow`, hardware accelerated, free to overflow the composable |
 | Interaction | `spb_tapToToggle`, or a listener, or both | an `onSegmentClick` handler, since the lit set lives outside the bar |
+| Partial fills | `setDivisionProgress(index, fraction)` | `segmentProgress: Map<Int, Float>` |
+| Per-segment colours | `setDivisionColor(index, color)` | `segmentColors: Map<Int, Color>` |
+| Per-segment accessibility | `isPerDivisionAccessibilityEnabled` / `spb_perDivisionAccessibility` | `perSegmentAccessibility` |
 
 ### Letting users tap segments
 
@@ -323,6 +328,42 @@ bar.divisions = 10
 bar.completedSegmentCount               // 3, the rest are revealed
 ```
 
+### Partial fills
+
+Every division has a fill fraction: `1` is exactly `enableDivision`, `0` is
+exactly `disableDivision`, and anything between draws the fill over the leading
+part of that cell, mirrored under RTL. This is the stories and chapters pattern:
+finished segments full, the current one advancing.
+
+![Five segments: two full, the third forty percent filled](docs/images/partial.png)
+
+```kotlin
+bar.enabledDivisions = listOf(0, 1)   // chapters already read
+bar.setDivisionProgress(2, 0.4f)      // 40% through chapter 3
+bar.getDivisionProgress(2)            // 0.4f
+```
+
+```kotlin
+SegmentedProgressBar(
+    divisions = 5,
+    enabledSegments = setOf(0, 1),
+    segmentProgress = mapOf(2 to 0.4f),
+)
+```
+
+The rules, all deliberate:
+
+- A partial division is **not** enabled: `isDivisionEnabled` reports `false`,
+  `completedSegmentCount` does not count it, and it never joins a
+  `CornerMode.EACH_RUN` run; the fill draws as its own in-progress pill, clipped
+  to the cell's shape so every corner mode renders correctly.
+- Changes between partial values apply with no transition, because the callers
+  that drive them (playback positions, download progress) update continuously
+  and a built-in animation would fight them.
+- Reaching `1` hands over to `segmentAnimation` as usual, and a GROW transition
+  continues from the partial fill rather than restarting at zero.
+- Values are clamped to `0..1`; a NaN throws, since that can only be a bug.
+
 ### Colours
 
 Two colours: on and off. There is nothing special about the defaults.
@@ -353,6 +394,43 @@ SegmentedProgressBar(
 > view's background. `setBackgroundColor` is deprecated here for exactly that
 > reason: in 0.0.1 it painted the track, which shadowed `View.setBackgroundColor`
 > with a different meaning.
+
+### Per-division colours
+
+One division can have its own on-colour. The rule is one sentence: **a colour
+set for a division wins over `progressBarColor` for that division; every
+division without one keeps using `progressBarColor`.** Changing the global
+colour never clears the overrides, and `clearDivisionColor` or
+`clearDivisionColors` is the way back to the single-colour path, which remains
+the primary API.
+
+The classic use is a heatmap or streak calendar: every division on, each
+carrying an intensity.
+
+![Fourteen segments in varying shades of green](docs/images/heatmap.png)
+
+```kotlin
+bar.enabledDivisions = (0 until bar.divisions).toList()
+intensities.forEachIndexed { index, level ->
+    bar.setDivisionColor(index, shadeFor(level))
+}
+
+bar.getDivisionColor(3)    // the effective colour: override if set, else global
+bar.hasDivisionColor(3)    // whether an override is set
+bar.clearDivisionColors()  // back to one colour
+```
+
+```kotlin
+SegmentedProgressBar(
+    divisions = 14,
+    enabledSegments = (0 until 14).toSet(),
+    segmentColors = intensities.mapIndexed { i, level -> i to shadeFor(level) }.toMap(),
+)
+```
+
+An override colours everything on-coloured in its division: the full fill, a
+partial fill, and the base a shimmer or pulse tints. Off segments always use
+`progressBarBackgroundColor`.
 
 ### Space between segments
 
@@ -693,6 +771,7 @@ Everything added in 2.0.0 is prefixed `spb_`:
 | `spb_shimmerColor` | color | `#73FFFFFF` | Colour blended in at the peak of a shimmer. |
 | `spb_maxWidth` / `spb_maxHeight` | dimension | none | Upper bound on the measured size. |
 | `spb_tapToToggle` | boolean | `false` | Whether tapping a segment toggles it. |
+| `spb_perDivisionAccessibility` | boolean | `false` | Whether each division is its own accessibility node. |
 
 > [!NOTE]
 > The original names are unprefixed for backwards compatibility with 0.0.1
@@ -733,6 +812,7 @@ Everything added in 2.0.0 is prefixed `spb_`:
 | `shimmerColor` | `Int` | `@ColorInt`. |
 | `maxWidth` / `maxHeight` | `Int` | Pixels, or `NO_MAX_SIZE`. A minimum still wins over a smaller maximum. |
 | `isTapToToggleEnabled` | `Boolean` | Whether a tap toggles the segment it hit. Sets `isClickable` and `isFocusable`. |
+| `isPerDivisionAccessibilityEnabled` | `Boolean` | Whether each division is its own accessibility node. Off by default. |
 | `completedSegmentCount` | `Int` | Read-only: how many segments are on *and* in range. |
 
 ### Functions
@@ -743,6 +823,11 @@ Everything added in 2.0.0 is prefixed `spb_`:
 | `disableDivision(index)` | Turns one segment off, leaving the others alone. |
 | `toggleDivision(index)` | Flips one segment and returns its new state. |
 | `isDivisionEnabled(index)` | Whether that segment is on. |
+| `setDivisionProgress(index, fraction)` | Fills the leading `fraction` of that segment; `1` enables it, `0` clears it. |
+| `getDivisionProgress(index)` | `1` for an enabled segment, the partial fill otherwise, `0` when off. |
+| `setDivisionColor(index, color)` | Gives one segment its own on-colour, superseding `progressBarColor` there. |
+| `clearDivisionColor(index)` / `clearDivisionColors()` | Back to the single global colour. |
+| `getDivisionColor(index)` / `hasDivisionColor(index)` | The effective on-colour, and whether it is an override. |
 | `divisionAt(x)` | The segment index at horizontal position `x` (view coordinates, for example `MotionEvent.getX`), or `NO_DIVISION` outside the bar. Handles padding and RTL. |
 | `setOnDivisionClickListener(l)` | Reports which segment was tapped, after `isTapToToggleEnabled` has had its say. Sets `isClickable` and `isFocusable`; pass `null` to clear. |
 | `reset()` | Turns every segment off. Preserves `divisions`, colours, gaps and corners. |
@@ -803,10 +888,34 @@ pixel-identical and covered by one set of geometry tests.
 
 ## Accessibility
 
-The bar reports itself to accessibility services as a `ProgressBar` and, when you
-have not set a `contentDescription` of your own, supplies a generated one such as
-"6 of 10 segments complete", localisable and correctly pluralised. Setting your
-own `contentDescription` always wins.
+By default the bar reports itself to accessibility services as a `ProgressBar`
+and, when you have not set a `contentDescription` of your own, supplies a
+generated one such as "6 of 10 segments complete", localisable and correctly
+pluralised. Setting your own `contentDescription` always wins. That single
+summary node is the right experience for a passive progress indicator.
+
+For a bar the user is expected to *operate*, opt in to per-division nodes:
+
+```xml
+app:spb_perDivisionAccessibility="true"
+```
+
+```kotlin
+bar.isPerDivisionAccessibilityEnabled = true
+```
+
+```kotlin
+SegmentedProgressBar(..., perSegmentAccessibility = true)
+```
+
+Each division becomes its own focusable, checkable node ("Segment 3 of 10",
+checked or not checked), which a screen reader steps through and, when the bar
+is interactive, toggles in place. Activation behaves exactly like a tap: the
+division toggles if tap-to-toggle is on, and any listener is notified after. On
+an interactive View it also enables keyboard use, arrow keys moving between
+divisions and Enter activating one, which is the path taps could never serve
+since an accessibility activation carries no coordinates. On a non-interactive
+bar the nodes are read-only state.
 
 ---
 
@@ -818,7 +927,7 @@ own `contentDescription` always wins.
 | **compileSdk** | 37 (Android 17) |
 | **Java/Kotlin target** | 17 |
 | **Language** | Kotlin, fully usable from Java |
-| **View dependencies** | `androidx.annotation` and `kotlin-stdlib`, nothing else |
+| **View dependencies** | `androidx.annotation`, `androidx.customview` (for the accessibility virtual tree) and `kotlin-stdlib`, nothing else |
 | **Compose dependencies** | the above plus Compose foundation and UI |
 
 The View artifact ships no colour resources that could collide with yours,
@@ -859,7 +968,7 @@ full list; the short version:
 git clone https://github.com/rayzone107/SegmentedProgressBar.git
 cd SegmentedProgressBar
 
-./gradlew test                  # 261 unit tests across three modules
+./gradlew test                  # 314 unit tests across three modules
 ./gradlew lint                  # must report zero findings
 ./gradlew :app:installDebug     # the demo app
 ```

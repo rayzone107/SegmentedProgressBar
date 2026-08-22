@@ -39,6 +39,8 @@ class MainActivity : AppCompatActivity() {
         setUpToggleBar()
         setUpSparseBars()
         setUpHabitTracker()
+        setUpStoriesBar()
+        setUpHeatmapBar()
         setUpStylingVariants()
         setUpAnimatedBars()
     }
@@ -135,6 +137,30 @@ class MainActivity : AppCompatActivity() {
 
     // region declarative selections
 
+    /**
+     * The stories/chapters pattern: finished divisions are full, the current
+     * one carries a fraction. Progress `1` is exactly [SegmentedProgressBar
+     * .enableDivision], so a player would just keep writing the fraction and
+     * the segment completes itself.
+     */
+    private fun setUpStoriesBar() {
+        binding.storiesBar.enabledDivisions = listOf(0, 1)
+        binding.storiesBar.setDivisionProgress(2, 0.4f)
+    }
+
+    /**
+     * A heatmap: every division on, each with its own colour superseding the
+     * global one. Also the gallery's consumer surface for per-division
+     * accessibility, which its layout switches on via XML.
+     */
+    private fun setUpHeatmapBar() {
+        val bar = binding.heatmapBar
+        bar.enabledDivisions = (0 until bar.divisions).toList()
+        HEATMAP_LEVELS.forEachIndexed { index, level ->
+            bar.setDivisionColor(index, HEATMAP_SHADES[level])
+        }
+    }
+
     private fun setUpSparseBars() {
         binding.sparseBar.enabledDivisions = SPARSE_SELECTION
 
@@ -227,6 +253,13 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         /** An arbitrary selection, which is all this library ever asks for. */
         val SPARSE_SELECTION = listOf(1, 2, 5, 6, 9)
+
+        /** Two weeks of activity, 0..3, GitHub-contribution style. */
+        val HEATMAP_LEVELS = listOf(1, 3, 0, 2, 3, 1, 0, 0, 2, 3, 3, 1, 2, 0)
+
+        /** Light to dark green, one shade per activity level. */
+        val HEATMAP_SHADES = listOf(0xFFDDF2E4, 0xFF9BDFB2, 0xFF3FB868, 0xFF12813C)
+            .map { it.toInt() }
 
         /** Mon, Wed, Thu, Sun, a week with two gaps in it. */
         val DAYS_COMPLETED = listOf(0, 2, 3, 6)

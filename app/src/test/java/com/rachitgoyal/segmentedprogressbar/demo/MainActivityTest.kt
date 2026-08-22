@@ -214,6 +214,40 @@ class MainActivityTest {
     }
 
     @Test
+    fun `the stories bar mixes full divisions with a partial one`() {
+        val controller = launch()
+        val bar = controller.bar(R.id.stories_bar)
+
+        assertThat(bar.enabledDivisions).containsExactly(0, 1).inOrder()
+        assertThat(bar.getDivisionProgress(2)).isEqualTo(0.4f)
+        // Underway is not done: only the full chapters count.
+        assertThat(bar.completedSegmentCount).isEqualTo(2)
+    }
+
+    @Test
+    fun `the heatmap bar gives every division its own colour`() {
+        val controller = launch()
+        val bar = controller.bar(R.id.heatmap_bar)
+
+        assertThat(bar.completedSegmentCount).isEqualTo(bar.divisions)
+        assertThat((0 until bar.divisions).all { bar.hasDivisionColor(it) }).isTrue()
+        // Levels differ, so at least two distinct shades must be in play.
+        assertThat((0 until bar.divisions).map { bar.getDivisionColor(it) }.distinct().size)
+            .isAtLeast(2)
+    }
+
+    @Test
+    fun `the heatmap bar exposes per-division accessibility from xml`() {
+        val controller = launch()
+        val bar = controller.bar(R.id.heatmap_bar)
+
+        assertThat(bar.isPerDivisionAccessibilityEnabled).isTrue()
+        val node = bar.accessibilityNodeProvider!!.createAccessibilityNodeInfo(0)!!
+        assertThat(node.contentDescription.toString()).isEqualTo("Segment 1 of 14")
+        assertThat(node.isChecked).isTrue()
+    }
+
+    @Test
     fun `the animated bars toggle from the layout alone`() {
         // They carry app:spb_tapToToggle rather than a listener, so this is the
         // whole path a consumer gets for free from XML: no activity code at all.

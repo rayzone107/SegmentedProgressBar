@@ -153,6 +153,47 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal" />
 
+        <!-- Partial fills: the stories/chapters pattern. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_stories" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_stories_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/stories_bar"
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            app:cornerRadius="4dp"
+            app:dividerColor="@android:color/transparent"
+            app:dividerWidth="4dp"
+            app:divisions="5"
+            app:progressBarBackgroundColor="#D9DDE3"
+            app:progressBarColor="#1B2733" />
+
+        <!-- Per-division colours: a heatmap. -->
+        <TextView
+            style="@style/SectionHeader"
+            android:text="@string/section_heatmap" />
+
+        <TextView
+            style="@style/SectionCaption"
+            android:text="@string/section_heatmap_caption" />
+
+        <com.rachitgoyal.segmented.SegmentedProgressBar
+            android:id="@+id/heatmap_bar"
+            android:layout_width="match_parent"
+            android:layout_height="26dp"
+            app:cornerRadius="5dp"
+            app:dividerColor="@android:color/transparent"
+            app:dividerWidth="3dp"
+            app:divisions="14"
+            app:progressBarBackgroundColor="#EDEFF2"
+            app:spb_cornerMode="eachSegment"
+            app:spb_perDivisionAccessibility="true" />
+
         <!-- Gaps instead of divider lines. -->
         <TextView
             style="@style/SectionHeader"
