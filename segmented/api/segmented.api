@@ -1,0 +1,153 @@
+public final class com.rachitgoyal.segmented.CornerMode extends java.lang.Enum<com.rachitgoyal.segmented.CornerMode> {
+  public static com.rachitgoyal.segmented.CornerMode valueOf(java.lang.String);
+  public static com.rachitgoyal.segmented.CornerMode[] values();
+  public static final com.rachitgoyal.segmented.CornerMode BAR_ENDS;
+  public static final com.rachitgoyal.segmented.CornerMode EACH_RUN;
+  public static final com.rachitgoyal.segmented.CornerMode EACH_SEGMENT;
+  public static kotlin.enums.EnumEntries<com.rachitgoyal.segmented.CornerMode> getEntries();
+}
+public final class com.rachitgoyal.segmented.EntryAnimation extends java.lang.Enum<com.rachitgoyal.segmented.EntryAnimation> {
+  public static com.rachitgoyal.segmented.EntryAnimation valueOf(java.lang.String);
+  public static com.rachitgoyal.segmented.EntryAnimation[] values();
+  public static final com.rachitgoyal.segmented.EntryAnimation FADE;
+  public static final com.rachitgoyal.segmented.EntryAnimation GROW;
+  public static final com.rachitgoyal.segmented.EntryAnimation NONE;
+  public static final com.rachitgoyal.segmented.EntryAnimation STAGGER;
+  public static kotlin.enums.EnumEntries<com.rachitgoyal.segmented.EntryAnimation> getEntries();
+}
+public final class com.rachitgoyal.segmented.RecurringAnimation extends java.lang.Enum<com.rachitgoyal.segmented.RecurringAnimation> {
+  public static com.rachitgoyal.segmented.RecurringAnimation valueOf(java.lang.String);
+  public static com.rachitgoyal.segmented.RecurringAnimation[] values();
+  public static final com.rachitgoyal.segmented.RecurringAnimation NONE;
+  public static final com.rachitgoyal.segmented.RecurringAnimation PULSE;
+  public static final com.rachitgoyal.segmented.RecurringAnimation SHIMMER;
+  public static kotlin.enums.EnumEntries<com.rachitgoyal.segmented.RecurringAnimation> getEntries();
+}
+public final class com.rachitgoyal.segmented.SegmentAnimation extends java.lang.Enum<com.rachitgoyal.segmented.SegmentAnimation> {
+  public static com.rachitgoyal.segmented.SegmentAnimation valueOf(java.lang.String);
+  public static com.rachitgoyal.segmented.SegmentAnimation[] values();
+  public static final com.rachitgoyal.segmented.SegmentAnimation FADE;
+  public static final com.rachitgoyal.segmented.SegmentAnimation GROW;
+  public static final com.rachitgoyal.segmented.SegmentAnimation NONE;
+  public static kotlin.enums.EnumEntries<com.rachitgoyal.segmented.SegmentAnimation> getEntries();
+}
+public final class com.rachitgoyal.segmented.SegmentGeometry {
+  public final float boundary(float, int, int);
+  public final float clampCornerRadius(float, float, float);
+  public final float dividerLeft(float, int, float, int);
+  public final float dividerRight(float, int, float, int);
+  public final float effectiveDividerWidth(float, int, float, boolean);
+  public final float mirror(float, float);
+  public final float segmentLeft(float, int, float, int);
+  public final float segmentRight(float, int, float, int);
+  public static final com.rachitgoyal.segmented.SegmentGeometry INSTANCE;
+}
+public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view.View {
+  protected android.os.Parcelable onSaveInstanceState();
+  protected void onAttachedToWindow();
+  protected void onDraw(android.graphics.Canvas);
+  protected void onLayout(boolean, int, int, int, int);
+  protected void onMeasure(int, int);
+  protected void onRestoreInstanceState(android.os.Parcelable);
+  protected void onVisibilityChanged(android.view.View, int);
+  public boolean onTouchEvent(android.view.MotionEvent);
+  public boolean performClick();
+  public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context);
+  public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context, android.util.AttributeSet);
+  public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context, android.util.AttributeSet, int);
+  public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context, android.util.AttributeSet, int, int);
+  public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context, android.util.AttributeSet, int, int, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public final boolean isDividerEnabled();
+  public final boolean isDivisionEnabled(int);
+  public final boolean isTapToToggleEnabled();
+  public final boolean toggleDivision(int);
+  public final com.rachitgoyal.segmented.CornerMode getCornerMode();
+  public final com.rachitgoyal.segmented.EntryAnimation getEntryAnimation();
+  public final com.rachitgoyal.segmented.RecurringAnimation getRecurringAnimation();
+  public final com.rachitgoyal.segmented.SegmentAnimation getSegmentAnimation();
+  public final com.rachitgoyal.segmented.ShadowTarget getShadowTarget();
+  public final float getActiveHeightRatio();
+  public final float getCornerRadius();
+  public final float getDividerWidth();
+  public final float getInactiveHeightRatio();
+  public final float getShadowDx();
+  public final float getShadowDy();
+  public final float getShadowRadius();
+  public final int divisionAt(float);
+  public final int getCompletedSegmentCount();
+  public final int getDividerColor();
+  public final int getDivisions();
+  public final int getMaxHeight();
+  public final int getMaxWidth();
+  public final int getProgressBarBackgroundColor();
+  public final int getProgressBarColor();
+  public final int getShadowColor();
+  public final int getShimmerColor();
+  public final java.util.List<java.lang.Integer> getEnabledDivisions();
+  public final long getAnimationDurationMs();
+  public final long getEntryStaggerDelayMs();
+  public final long getRecurringDurationMs();
+  public final void disableDivision(int);
+  public final void enableDivision(int);
+  public final void reset();
+  public final void setActiveHeightRatio(float);
+  public final void setAnimationDurationMs(long);
+  public final void setCornerMode(com.rachitgoyal.segmented.CornerMode);
+  public final void setCornerRadius(float);
+  public final void setDividerColor(int);
+  public final void setDividerEnabled(boolean);
+  public final void setDividerWidth(float);
+  public final void setDivisions(int);
+  public final void setEnabledDivisions(java.util.List<java.lang.Integer>);
+  public final void setEntryAnimation(com.rachitgoyal.segmented.EntryAnimation);
+  public final void setEntryStaggerDelayMs(long);
+  public final void setInactiveHeightRatio(float);
+  public final void setMaxHeight(int);
+  public final void setMaxWidth(int);
+  public final void setOnDivisionClickListener(com.rachitgoyal.segmented.SegmentedProgressBar$OnDivisionClickListener);
+  public final void setProgressBarBackgroundColor(int);
+  public final void setProgressBarColor(int);
+  public final void setRecurringAnimation(com.rachitgoyal.segmented.RecurringAnimation);
+  public final void setRecurringDurationMs(long);
+  public final void setSegmentAnimation(com.rachitgoyal.segmented.SegmentAnimation);
+  public final void setShadowColor(int);
+  public final void setShadowDx(float);
+  public final void setShadowDy(float);
+  public final void setShadowRadius(float);
+  public final void setShadowTarget(com.rachitgoyal.segmented.ShadowTarget);
+  public final void setShimmerColor(int);
+  public final void setTapToToggleEnabled(boolean);
+  public static final com.rachitgoyal.segmented.SegmentedProgressBar$Companion Companion;
+  public static final float DEFAULT_CORNER_RADIUS_PX;
+  public static final float DEFAULT_DIVIDER_WIDTH_PX;
+  public static final int DEFAULT_BACKGROUND_COLOR;
+  public static final int DEFAULT_DIVIDER_COLOR;
+  public static final int DEFAULT_DIVISIONS;
+  public static final int DEFAULT_PROGRESS_COLOR;
+  public static final int DEFAULT_SHADOW_COLOR;
+  public static final int DEFAULT_SHIMMER_COLOR;
+  public static final int NO_DIVISION;
+  public static final int NO_MAX_SIZE;
+  public static final long DEFAULT_ANIMATION_DURATION_MS;
+  public static final long DEFAULT_ENTRY_STAGGER_DELAY_MS;
+  public static final long DEFAULT_RECURRING_DURATION_MS;
+  public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo);
+  public void setBackgroundColor(int);
+}
+public final class com.rachitgoyal.segmented.SegmentedProgressBar$Companion {
+  public com.rachitgoyal.segmented.SegmentedProgressBar$Companion(kotlin.jvm.internal.DefaultConstructorMarker);
+}
+public interface com.rachitgoyal.segmented.SegmentedProgressBar$OnDivisionClickListener {
+  public abstract void onDivisionClick(com.rachitgoyal.segmented.SegmentedProgressBar, int);
+}
+public final class com.rachitgoyal.segmented.SegmentedProgressBar$SavedState$Companion {
+  public com.rachitgoyal.segmented.SegmentedProgressBar$SavedState$Companion(kotlin.jvm.internal.DefaultConstructorMarker);
+}
+public final class com.rachitgoyal.segmented.ShadowTarget extends java.lang.Enum<com.rachitgoyal.segmented.ShadowTarget> {
+  public static com.rachitgoyal.segmented.ShadowTarget valueOf(java.lang.String);
+  public static com.rachitgoyal.segmented.ShadowTarget[] values();
+  public static final com.rachitgoyal.segmented.ShadowTarget ALL;
+  public static final com.rachitgoyal.segmented.ShadowTarget OFF_SEGMENTS;
+  public static final com.rachitgoyal.segmented.ShadowTarget ON_SEGMENTS;
+  public static kotlin.enums.EnumEntries<com.rachitgoyal.segmented.ShadowTarget> getEntries();
+}
