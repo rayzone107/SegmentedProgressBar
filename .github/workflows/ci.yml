@@ -45,10 +45,13 @@ jobs:
       - name: Assemble demo app
         run: ./gradlew :app:assembleRelease
 
+      # The same task JitPack runs, and the one a Maven Central release builds
+      # its bundle from, so a release that cannot even be assembled fails here
+      # rather than at publish time.
       - name: Verify the published artifacts resolve
         run: >-
-          ./gradlew :segmented:publishReleasePublicationToMavenLocal
-          :segmented-compose:publishReleasePublicationToMavenLocal
+          ./gradlew :segmented:publishToMavenLocal
+          :segmented-compose:publishToMavenLocal
 
       - name: Upload test reports
         if: always()
