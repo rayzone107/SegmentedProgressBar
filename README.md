@@ -60,7 +60,7 @@ so none of them can drift away from what the code actually draws.
 
 ## Install
 
-From Maven Central, so there is no repository to add:
+On **Maven Central**, so there is no repository to add. Gradle Kotlin DSL:
 
 ```kotlin
 dependencies {
@@ -76,10 +76,70 @@ They are separate artifacts on purpose, so a View-only project never inherits th
 Compose runtime. The Compose artifact depends on the View one for the shared
 geometry and option types, so taking both never gives you two copies of anything.
 
-<details>
-<summary>From JitPack instead</summary>
+Using something other than the Kotlin DSL? Expand whichever applies:
 
-Versions 2.0.0 and 2.1.0 are also on JitPack, which is where this library was
+<details>
+<summary><b>Gradle (Groovy DSL)</b></summary>
+<br>
+
+```groovy
+dependencies {
+    implementation 'io.github.rayzone107:segmentedprogressbar:2.1.0'
+    implementation 'io.github.rayzone107:segmentedprogressbar-compose:2.1.0'
+}
+```
+
+</details>
+
+<details>
+<summary><b>Version catalog</b></summary>
+<br>
+
+In `gradle/libs.versions.toml`:
+
+```toml
+[versions]
+segmentedprogressbar = "2.1.0"
+
+[libraries]
+segmentedprogressbar = { module = "io.github.rayzone107:segmentedprogressbar", version.ref = "segmentedprogressbar" }
+segmentedprogressbar-compose = { module = "io.github.rayzone107:segmentedprogressbar-compose", version.ref = "segmentedprogressbar" }
+```
+
+```kotlin
+dependencies {
+    implementation(libs.segmentedprogressbar)
+    implementation(libs.segmentedprogressbar.compose)
+}
+```
+
+</details>
+
+<details>
+<summary><b>Maven (pom.xml)</b></summary>
+<br>
+
+The `aar` type matters; without it Maven looks for a jar that does not exist.
+
+```xml
+<dependency>
+  <groupId>io.github.rayzone107</groupId>
+  <artifactId>segmentedprogressbar</artifactId>
+  <version>2.1.0</version>
+  <type>aar</type>
+</dependency>
+```
+
+Worth saying plainly: the Android build tooling is Gradle-only these days, so
+this is here for completeness rather than as a route anyone should choose.
+
+</details>
+
+<details>
+<summary><b>JitPack</b></summary>
+<br>
+
+Versions 2.0.0 and 2.1.0 are on JitPack too, which is where this library was
 published before Maven Central. It needs its repository added, in
 `settings.gradle.kts`:
 
