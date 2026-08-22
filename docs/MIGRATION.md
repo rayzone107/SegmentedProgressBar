@@ -20,7 +20,7 @@ supports below API 26, you cannot use 2.0.0.
 ```
 Manifest merger failed : uses-sdk:minSdkVersion 21 cannot be smaller than
 version 26 declared in library
-[com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar:2.0.0]
+[io.github.rayzone107:segmentedprogressbar:2.1.0]
 ```
 
 There is no workaround other than raising your own `minSdk`, or staying on 0.0.1.
@@ -131,20 +131,21 @@ bar.divisions = 10        // indices 3 and 7 are now revealed
 
 ## 9. Dependency coordinate
 
-The 2.0.0 coordinate is:
+The current coordinate is on Maven Central, so nothing has to be added to your
+repositories:
 
 ```kotlin
-implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar:2.0.0")
+implementation("io.github.rayzone107:segmentedprogressbar:2.1.0")
 ```
 
-Note the **dot** before the repository name. That is how JitPack addresses a
-repository publishing more than one artifact, which this one now does. The
-artifact id itself is unchanged.
+The artifact id itself is unchanged from 0.0.1; only the group moved.
 
-`com.github.rayzone107:segmentedprogressbar` also resolves, since JitPack reads
-the artifact id as a repository name and this repository happens to be called
-that, but there is no repository named `segmentedprogressbar-compose`, so the
-Compose artifact needs the dotted group. Using it for both keeps them consistent.
+The same versions are also on JitPack, under
+`com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar`, which is where
+2.0.0 and 2.1.0 were published first. That form needs the JitPack repository
+added and a **dot** before the repository name, because that is how JitPack
+addresses a repository publishing more than one artifact. Maven Central needs
+neither, so prefer it.
 
 Whatever you had before was probably not working anyway:
 
@@ -205,15 +206,16 @@ bar.recurringAnimation = RecurringAnimation.SHIMMER   // keep shimmering
 ```
 
 All of them default to off or neutral, so none change how an existing bar looks.
-See [Styling variants](../README.md#styling-variants) for the details; the only
-remaining caveat is that a drop shadow forces a software layer.
+See [Styling variants](../README.md#styling-variants) for the details. A drop
+shadow needs padding to land in, which is the only caveat; as of 2.1.0 it no
+longer forces a software layer.
 
 ## 12. Jetpack Compose
 
 There is now a second artifact if you want a Composable rather than a View:
 
 ```kotlin
-implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar-compose:2.0.0")
+implementation("io.github.rayzone107:segmentedprogressbar-compose:2.1.0")
 ```
 
 It shares the option enums and the layout maths with the View, so the two render

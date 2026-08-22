@@ -63,12 +63,36 @@ gpg --full-generate-key          # RSA, 4096 bits, no expiry or a long one
 # Note the key id, the long hex string on the "sec" line.
 gpg --list-secret-keys --keyid-format LONG
 
-# Publish the public half. Central looks the key up here to verify signatures.
+# Publish the public half. keys.openpgp.org is the server Central actually
+# consults, so this one is not optional. Sending to keyserver.ubuntu.com as well
+# costs nothing and is what other tools tend to look at.
+gpg --keyserver hkps://keys.openpgp.org --send-keys <KEY_ID>
 gpg --keyserver keyserver.ubuntu.com --send-keys <KEY_ID>
 
 # Export the private half, armoured, for the build to sign with.
 gpg --armor --export-secret-keys <KEY_ID>
 ```
+
+**Then verify the email address on the key, or the release will fail.**
+keys.openpgp.org strips every user id off an uploaded key until the owner proves
+they control the address, and a key with no user id is one GnuPG refuses to
+import at all. Central therefore fetches the key, cannot load it, and reports
+`Could not find a public key by the key fingerprint` against every single file,
+which reads like a signing problem and is not one. Upload the key at
+[keys.openpgp.org/upload](https://keys.openpgp.org/upload), which offers to send
+a verification mail, and click the link in it.
+
+Proof that it worked, and worth running before a first release, because it is
+exactly what Central does:
+
+```bash
+export GNUPGHOME=$(mktemp -d)          # an empty keyring, like Central's
+curl -s "https://keys.openpgp.org/vks/v1/by-fingerprint/<FINGERPRINT>" | gpg --import
+gpg --verify some-artifact.pom.asc some-artifact.pom
+```
+
+`no user ID` on import means the address is still unverified. A `Good signature`
+means Central will accept the release.
 
 Back the key up somewhere that is not this machine and not this repository. A
 lost signing key is not a disaster (generate another and publish it), but a
@@ -150,13 +174,32 @@ curl -s "https://jitpack.io/api/builds/com.github.rayzone107.SegmentedProgressBa
 ### 4. Publish to Maven Central
 
 ```bash
-./gradlew publishAndReleaseToMavenCentral --no-configuration-cache
+./gradlew publishToMavenCentral --no-configuration-cache
 ```
 
-This builds both modules, signs every artifact, uploads one bundle to the
-Portal, and releases it. To hold the deployment in the Portal for inspection
-instead of releasing it straight away, use `publishToMavenCentral` and press
-Publish in the Portal's Deployments view by hand.
+This builds both modules, signs every artifact and uploads one bundle, which
+then waits in the Portal's Deployments view until Publish is pressed by hand.
+`publishAndReleaseToMavenCentral` skips that pause and releases immediately;
+prefer the two-step form, since a released version can never be taken back.
+
+**Check the result rather than trusting the build's exit code.** The upload task
+prints `Skipping deployment validation!` and succeeds without waiting, so a
+bundle that Central rejects still looks like a green build. The deployment id it
+prints is what to ask about:
+
+```bash
+TOKEN=$(printf '%s:%s' "$mavenCentralUsername" "$mavenCentralPassword" | base64)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+  "https://central.sonatype.com/api/v1/publisher/status?id=<DEPLOYMENT_ID>"
+```
+
+`VALIDATED` means it is ready for the Publish button, and `errors` lists
+anything Central objected to. A failed deployment can be thrown away and redone:
+
+```bash
+curl -s -X DELETE -H "Authorization: Bearer $TOKEN" \
+  "https://central.sonatype.com/api/v1/publisher/deployment/<DEPLOYMENT_ID>"
+```
 
 The artifacts are then searchable in a few minutes and resolvable from
 `mavenCentral()` within roughly half an hour. **A released version is
