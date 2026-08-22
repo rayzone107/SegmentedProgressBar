@@ -582,9 +582,9 @@ SegmentedProgressBar(
 or changing its blur or offset cannot move or resize anything. The trade-off is
 that it needs somewhere to go: **give the view padding**, as in the XML above, or
 the blur has nowhere to land. `android:clipChildren="false"` on the parent does not
-help, because the software layer the shadow needs is itself the size of the view.
-Compose has no such layer and does not clip to a composable's bounds, so there the
-shadow simply overflows.
+help, because the bitmap the View renders the shadow into is itself the size of
+the view. Compose has no such bitmap and does not clip to a composable's bounds,
+so there the shadow simply overflows.
 
 **The bar casts one shadow, shaped like its outline.** Concretely:
 
@@ -592,18 +592,22 @@ shadow simply overflows.
   than the unlit one beside it.
 - Nothing is drawn inside the bar, so a shadow cannot outline a segment or show
   through a translucent one.
-- Nothing is drawn *between* segments either. A narrow gap would otherwise fill in
-  with blur from both sides and become the very divider line that leaving it
-  transparent asked to be rid of.
+- A gap gets shadow only when it is a real opening. Between separate pieces, the
+  neighbours' blur spills in exactly as it does beside the bar's outer ends, so
+  each piece casts like its own object. A painted divider seals its gaps, the bar
+  being one slab there, and so does the slit inside a `CornerMode.EACH_RUN` run,
+  where blur falling in would draw the very divider line that mode exists to
+  remove.
 
 `shadowTarget` chooses which segments contribute. Because no shadow is ever drawn
 inside the bar, `ON_SEGMENTS` shows up along the outside of each lit run, as in the
 second image, rather than as a shadow cast onto the track.
 
-One caveat for the View: **it forces a software layer.** Android ignores `Paint`
-shadow layers for shapes on a hardware-accelerated canvas, so enabling one
-switches the view to `LAYER_TYPE_SOFTWARE`. That is an off-screen bitmap the size
-of the view, cheap for a bar, but the reason this is off by default.
+One note for the View: Android ignores `Paint` shadow layers on a
+hardware-accelerated canvas, so the View renders the shadow once into a cached
+bitmap the size of the view and blits it each frame, rebuilding it only when the
+bar's silhouette changes. The view itself stays fully hardware accelerated, even
+while animating.
 
 For a shadow under the bar *as a whole* with no padding needed, prefer
 `android:elevation`. The view supplies a correctly rounded outline, so the
