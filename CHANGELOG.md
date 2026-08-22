@@ -54,6 +54,14 @@ working, source and binary alike, and `apiCheck` now enforces that in CI.
 
 ### Changed
 
+- **A shadow no longer seals unpainted gaps.** A gap belongs to the shadow's
+  silhouette only where the paint connects the cells around it: under a
+  painted divider, which makes the bar one slab, and inside an `EACH_RUN` run,
+  including the joint where a run flows into its partial. A transparent gap
+  between separate pieces is now an opening the neighbours' blur spills into,
+  so each piece casts like its own object. Previously the shadow bridged every
+  gap, which made an unpainted gap read as a painted divider line the moment
+  a shadow surrounded it.
 - **A shadow no longer forces a software layer.** The View renders the shadow
   into a cached bitmap rebuilt only when the silhouette changes and blits it
   each frame, so the view stays fully hardware accelerated; previously every

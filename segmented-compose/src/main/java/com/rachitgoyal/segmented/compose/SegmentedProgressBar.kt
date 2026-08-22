@@ -788,6 +788,24 @@ private class BarRenderer(
         return if (isRtl) roundsEnd to roundsStart else roundsStart to roundsEnd
     }
 
+    /**
+     * Whether the gap before cell [index] sits inside one painted unit rather
+     * than being a real opening.
+     *
+     * A painted divider makes the whole bar one slab, so every gap is sealed
+     * into the shadow's silhouette. A transparent gap connects only inside a
+     * [CornerMode.EACH_RUN] run, whose squared corners paint it as a single
+     * pill, including the joint where a run flows into the partial segment
+     * continuing it. Every other transparent gap is an opening between
+     * separate pieces, and the shadow treats them as such.
+     */
+    private fun gapIsConnected(index: Int): Boolean {
+        if (gapColor.alpha > 0f) return true
+        return cornerMode == CornerMode.EACH_RUN &&
+            (index - 1) in onSegments &&
+            (index in onSegments || partialOf(index) > 0f)
+    }
+
     /** The on colour for [index], tinted by whatever recurring animation runs. */
     private fun animatedOnColor(index: Int, recurringPhase: Float): Color {
         var color = onColorOf(index)
@@ -923,14 +941,19 @@ private class BarRenderer(
                 }
             }
 
-            // The gaps belong to the outline too, so that no shadow is drawn
-            // between two segments: a narrow gap otherwise fills in with blur from
-            // both sides and becomes the divider line EACH_RUN exists to remove. In
-            // the caster, only gaps between two contributing cells are bridged, so
-            // a run reads as one shape while a cell the target leaves out still
-            // breaks it.
+            // A gap belongs to the outline only where the paint actually
+            // connects the cells around it, see gapIsConnected: there, blur
+            // falling into the slit would draw exactly the divider line
+            // EACH_RUN exists to remove. A real opening is left out entirely,
+            // so the neighbours' blur spills into it and separate pieces cast
+            // like separate objects, instead of the shadow sealing every slit
+            // and making an unpainted gap read as a painted line. In the
+            // caster, only gaps between two contributing cells are bridged, so
+            // a run reads as one shape while a cell the target leaves out
+            // still breaks it.
             if (gapSpan > 0f && bandBottom > bandTop) {
                 for (index in 1 until divisions) {
+                    if (!gapIsConnected(index)) continue
                     if (casters && !(castsShadow(index - 1) && castsShadow(index))) continue
                     path.addRect(
                         Rect(

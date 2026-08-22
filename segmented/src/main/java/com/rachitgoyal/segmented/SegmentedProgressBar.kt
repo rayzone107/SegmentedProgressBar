@@ -352,6 +352,9 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         set(@ColorInt value) {
             if (dividerPaint.color == value) return
             dividerPaint.color = value
+            // Whether the divider is painted decides whether the shadow seals
+            // the gaps, so the silhouette changes with the colour's alpha.
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -1650,10 +1653,14 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      *    bar. A shape at full shadow alpha under an anti-aliased fill edge showed
      *    through as a dark outline around every segment, and through anything
      *    translucent as dirt.
-     * 4. The gaps count as part of the silhouette, so a shadow is never drawn
-     *    *between* segments either. Otherwise a narrow gap fills in with blur from
-     *    both sides and becomes exactly the divider line that [CornerMode.EACH_RUN]
-     *    exists to get rid of.
+     * 4. A gap counts as part of the silhouette only where the paint actually
+     *    connects the two cells around it, see [gapIsConnected]: inside an
+     *    [CornerMode.EACH_RUN] run, where blur falling into the slit would draw
+     *    exactly the divider line that mode exists to get rid of, and under a
+     *    painted divider, which makes the bar one slab. A real opening is left
+     *    out of the silhouette entirely: the neighbours' blur spills into it,
+     *    so separate pieces cast like separate objects, instead of the shadow
+     *    sealing every slit and making an unpainted gap read as a painted line.
      *
      * [ShadowTarget] then chooses which cells contribute to the caster; a cell that
      * contributes nothing simply leaves that stretch of the outline unshadowed.
@@ -1728,6 +1735,11 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
 
         if (dividerSpan > 0f) {
             for (index in 1 until _divisions) {
+                // Only a gap inside one painted unit is sealed into the
+                // silhouette; a real opening is left out entirely, so the
+                // neighbours' blur spills into it and separate pieces read as
+                // separate objects instead of one slab with lines on it.
+                if (!gapIsConnected(index)) continue
                 scratchRect.set(
                     SegmentGeometry.dividerLeft(contentWidth, _divisions, dividerSpan, index),
                     bandTop,
@@ -1750,6 +1762,24 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         canvas.clipOutPath(shadowClipPath)
         canvas.drawPath(shadowCastPath, shadowPaint)
         canvas.restoreToCount(saveCount)
+    }
+
+    /**
+     * Whether the gap before cell [index] sits inside one painted unit rather
+     * than being a real opening.
+     *
+     * A painted divider makes the whole bar one slab, so every gap is sealed
+     * into the silhouette. A transparent gap connects only inside a
+     * [CornerMode.EACH_RUN] run, whose squared corners paint it as a single
+     * pill, including the joint where a run flows into the partial division
+     * continuing it. Every other transparent gap is an opening between
+     * separate pieces, and the shadow treats them as such.
+     */
+    private fun gapIsConnected(index: Int): Boolean {
+        if (Color.alpha(dividerPaint.color) > 0) return true
+        return _cornerMode == CornerMode.EACH_RUN &&
+            isDivisionEnabled(index - 1) &&
+            (isDivisionEnabled(index) || partialFills[index] != null)
     }
 
     /**
