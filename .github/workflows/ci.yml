@@ -33,6 +33,12 @@ jobs:
       - name: Lint
         run: ./gradlew lint
 
+      - name: API compatibility
+        # Fails when the public surface of a published module stops matching
+        # its checked-in api/<module>.api dump. Intentional changes are made
+        # visible by running apiDump and committing the diff.
+        run: ./gradlew :segmented:apiCheck :segmented-compose:apiCheck
+
       - name: Assemble libraries
         run: ./gradlew :segmented:assembleRelease :segmented-compose:assembleRelease
 

@@ -20,6 +20,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
+import com.rachitgoyal.segmented.CornerMode
 import com.rachitgoyal.segmented.ShadowTarget
 import org.junit.Rule
 import org.junit.Test
@@ -76,17 +77,26 @@ class SegmentedProgressBarComposeShadowTest {
     private var blur by mutableStateOf(4)
     private var target by mutableStateOf(ShadowTarget.ALL)
     private var gap by mutableStateOf(0)
+    private var gapColor by mutableStateOf(Color.Transparent)
+    private var corners by mutableStateOf(CornerMode.BAR_ENDS)
+    private var progress by mutableStateOf(mapOf<Int, Float>())
 
     private fun render(
         target: ShadowTarget = ShadowTarget.ALL,
         blur: Int = 4,
         lit: Set<Int> = setOf(1),
         gap: Int = 0,
+        gapColor: Color = Color.Transparent,
+        corners: CornerMode = CornerMode.BAR_ENDS,
+        progress: Map<Int, Float> = emptyMap(),
     ): Bitmap {
         this.target = target
         this.blur = blur
         this.lit = lit
         this.gap = gap
+        this.gapColor = gapColor
+        this.corners = corners
+        this.progress = progress
         if (!composed) {
             composed = true
             composeRule.setContent {
@@ -101,7 +111,10 @@ class SegmentedProgressBarComposeShadowTest {
                         onColor = ON_COLOR,
                         offColor = OFF_COLOR,
                         gap = this@SegmentedProgressBarComposeShadowTest.gap.dp,
+                        gapColor = this@SegmentedProgressBarComposeShadowTest.gapColor,
                         cornerRadius = 0.dp,
+                        cornerMode = this@SegmentedProgressBarComposeShadowTest.corners,
+                        segmentProgress = this@SegmentedProgressBarComposeShadowTest.progress,
                         shadow = this@SegmentedProgressBarComposeShadowTest.blur
                             .takeIf { it > 0 }
                             ?.let {
@@ -178,15 +191,55 @@ class SegmentedProgressBarComposeShadowTest {
         val aboveCell = image.shadowAt(LIT_X, ABOVE_BAR_Y)
 
         assertThat(aboveCell).isGreaterThan(0)
-        assertThat(aboveGap).isWithin(SHADE).of(aboveCell)
+        // An open gap may dip lighter above the slit, but never darker.
+        assertThat(aboveGap).isAtMost(aboveCell + SHADE)
     }
 
     @Test
-    fun `no shadow is drawn inside a gap`() {
-        // Otherwise a narrow gap fills in with blur from both sides and becomes
-        // exactly the divider line that leaving it transparent asked to be rid of.
+    fun `an unpainted gap is an opening the shadow spills into`() {
+        // The gap borders two separate pieces, so it must read as space between
+        // them: their blur falls in, exactly as it falls beside the bar's outer
+        // ends. Sealing it left a bright page-coloured slit that read as a
+        // painted divider line the moment a shadow surrounded it.
         val plain = render(blur = 0, gap = 4)
         val shadowed = render(gap = 4)
+
+        assertThat(plain.shadowAt(100, MID_BAR_Y)).isEqualTo(0)
+        assertThat(shadowed.shadowAt(100, MID_BAR_Y)).isGreaterThan(0)
+    }
+
+    @Test
+    fun `a gap inside an each_run run stays sealed`() {
+        // Within a run the squared corners paint one pill, and blur falling
+        // into its slit would draw exactly the divider line EACH_RUN exists to
+        // get rid of.
+        val plain = render(blur = 0, gap = 4, lit = setOf(1, 2), corners = CornerMode.EACH_RUN)
+        val shadowed = render(gap = 4, lit = setOf(1, 2), corners = CornerMode.EACH_RUN)
+
+        for (x in 99..101) {
+            assertThat(shadowed.getPixel(x, MID_BAR_Y)).isEqualTo(plain.getPixel(x, MID_BAR_Y))
+        }
+    }
+
+    @Test
+    fun `the gap where a run flows into its partial stays sealed too`() {
+        val plain = render(
+            blur = 0,
+            gap = 4,
+            corners = CornerMode.EACH_RUN,
+            progress = mapOf(2 to 0.5f),
+        )
+        val shadowed = render(gap = 4, corners = CornerMode.EACH_RUN, progress = mapOf(2 to 0.5f))
+
+        assertThat(shadowed.getPixel(100, MID_BAR_Y)).isEqualTo(plain.getPixel(100, MID_BAR_Y))
+    }
+
+    @Test
+    fun `a painted divider seals every gap`() {
+        // An opaque divider makes the bar one slab; shadow on the painted line
+        // would read as dirt.
+        val plain = render(blur = 0, gap = 4, gapColor = Color.White)
+        val shadowed = render(gap = 4, gapColor = Color.White)
 
         for (x in 99..101) {
             assertThat(shadowed.getPixel(x, MID_BAR_Y)).isEqualTo(plain.getPixel(x, MID_BAR_Y))

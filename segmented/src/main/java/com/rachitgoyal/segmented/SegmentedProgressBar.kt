@@ -2,6 +2,7 @@ package com.rachitgoyal.segmented
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
@@ -11,9 +12,15 @@ import android.graphics.RectF
 import android.os.Parcel
 import android.os.Parcelable
 import android.util.AttributeSet
+import android.graphics.Rect
 import android.view.AbsSavedState
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.customview.widget.ExploreByTouchHelper
 import android.view.ViewOutlineProvider
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -123,6 +130,27 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
     private val shadowCastPath = Path()
 
     /**
+     * The rendered shadow, cached as a bitmap.
+     *
+     * A `Paint` shadow layer only renders on a software canvas, and the old
+     * approach, switching the whole view to `LAYER_TYPE_SOFTWARE`, meant every
+     * frame of a shimmer re-rasterised the entire view in software. The shadow
+     * is instead rendered once into this bitmap whenever the silhouette
+     * changes, and each frame just blits it, so recurring animations run fully
+     * hardware accelerated. The bitmap costs the same memory the software
+     * layer did; it exists only while [shadowRadius] is positive.
+     */
+    private var shadowCache: Bitmap? = null
+    private var shadowCacheCanvas: Canvas? = null
+
+    /** Set by anything that changes the bar's silhouette or the shadow itself. */
+    private var shadowCacheDirty = true
+
+    /** The padding the cache was rendered with, part of its validity check. */
+    private var shadowCachePaddingLeft = -1
+    private var shadowCachePaddingTop = -1
+
+    /**
      * The two vertical bands the bar is drawn in, recomputed at the top of every
      * [onDraw].
      *
@@ -141,7 +169,30 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
     /** Sorted, de-duplicated, non-negative. The source of truth for progress. */
     private val enabled = ArrayList<Int>()
 
+    /**
+     * Fractional fills for divisions that are partially complete, by index.
+     *
+     * Kept disjoint from [enabled]: a division is either fully lit (in
+     * [enabled]), partially filled (in here, strictly between `0` and `1`), or
+     * off (in neither). [setDivisionProgress] maintains the invariant, and
+     * [syncAnimationTargets] clears an entry the moment its division becomes
+     * fully lit, seeding the transition from the old partial value so a GROW
+     * continues the fill rather than restarting it.
+     */
+    private val partialFills = android.util.SparseArray<Float>()
+
+    /**
+     * Per-division overrides of [progressBarColor], by index.
+     *
+     * Consulted at draw time through [effectiveDivisionColor], so the single
+     * global colour stays the primary API and this map only ever narrows it.
+     */
+    private val divisionColors = android.util.SparseIntArray()
+
     private var divisionClickListener: OnDivisionClickListener? = null
+
+    /** Installed while [isPerDivisionAccessibilityEnabled]; `null` otherwise. */
+    private var divisionTouchHelper: DivisionTouchHelper? = null
 
     /** Where the in-flight touch went down; `NaN` when there isn't one. */
     private var pendingTouchX = Float.NaN
@@ -168,6 +219,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
     private var _maxWidth: Int = NO_MAX_SIZE
     private var _maxHeight: Int = NO_MAX_SIZE
     private var _isTapToToggleEnabled: Boolean = false
+    private var _isPerDivisionAccessibilityEnabled: Boolean = false
 
     /**
      * The transition style currently governing segment fractions.
@@ -283,6 +335,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         set(@ColorInt value) {
             if (backgroundPaint.color == value) return
             backgroundPaint.color = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -299,6 +352,9 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         set(@ColorInt value) {
             if (dividerPaint.color == value) return
             dividerPaint.color = value
+            // Whether the divider is painted decides whether the shadow seals
+            // the gaps, so the silhouette changes with the colour's alpha.
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -326,6 +382,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             requireNonNegativeDimension(value, "dividerWidth")
             if (_dividerWidth == value) return
             _dividerWidth = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -339,6 +396,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         set(value) {
             if (_isDividerEnabled == value) return
             _isDividerEnabled = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -360,6 +418,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             requireNonNegativeDimension(value, "cornerRadius")
             if (_cornerRadius == value) return
             _cornerRadius = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -381,6 +440,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         set(value) {
             if (_cornerMode == value) return
             _cornerMode = value
+            invalidateShadowCache()
             invalidateOutline()
             invalidate()
         }
@@ -401,6 +461,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             requireRatio(value, "activeHeightRatio")
             if (_activeHeightRatio == value) return
             _activeHeightRatio = value
+            invalidateShadowCache()
             invalidate()
         }
 
@@ -418,6 +479,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             requireRatio(value, "inactiveHeightRatio")
             if (_inactiveHeightRatio == value) return
             _inactiveHeightRatio = value
+            invalidateShadowCache()
             invalidateOutline()
             invalidate()
         }
@@ -432,19 +494,20 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      * as its neighbour and no cell is outlined by the shadow of the cell next to
      * it. [shadowTarget] chooses which segments contribute.
      *
-     * Enabling a shadow switches the view to a software layer, because Android
-     * ignores [Paint.setShadowLayer] for shapes on a hardware-accelerated
-     * canvas. That costs an off-screen bitmap the size of the view, which is
-     * cheap for a bar but is the reason this is off by default. For a shadow
-     * under the bar as a whole, prefer `android:elevation`: the view supplies a
-     * correctly rounded outline for it.
+     * The shadow renders into a cached bitmap that is rebuilt only when the
+     * bar's silhouette changes, and each frame just blits it, so the view stays
+     * fully hardware accelerated: a shimmer or pulse never re-rasterises
+     * anything. The bitmap is the size of the view and exists only while the
+     * radius is positive. For a shadow under the bar as a whole, prefer
+     * `android:elevation`: the view supplies a correctly rounded outline for
+     * it.
      *
      * The shadow is drawn *outside* the bar and never changes its size, so it
-     * needs somewhere to go: give the view padding. The software layer is the
-     * size of the view, so unlike an elevation shadow this one cannot escape the
-     * view's own bounds, and `android:clipChildren="false"` on the parent will
-     * not help. Changing [shadowRadius], [shadowDx] or [shadowDy] never moves or
-     * resizes the bar.
+     * needs somewhere to go: give the view padding. The cache bitmap is the
+     * size of the view, so unlike an elevation shadow this one cannot escape
+     * the view's own bounds, and `android:clipChildren="false"` on the parent
+     * will not help. Changing [shadowRadius], [shadowDx] or [shadowDy] never
+     * moves or resizes the bar.
      *
      * @throws IllegalArgumentException if [value] is negative or not finite.
      */
@@ -857,6 +920,12 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
                 R.styleable.SegmentedProgressBar_spb_tapToToggle,
                 false,
             )
+
+            _isPerDivisionAccessibilityEnabled = typedArray.getBoolean(
+                R.styleable.SegmentedProgressBar_spb_perDivisionAccessibility,
+                false,
+            )
+            if (_isPerDivisionAccessibilityEnabled) applyPerDivisionAccessibility()
             // Set directly rather than through updateInteractivity(), which also
             // clears both flags when nothing is interactive and would undo an
             // android:clickable in the same tag.
@@ -908,6 +977,165 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             true
         }
     }
+
+    /**
+     * Sets how much of the division at [index] is filled, from `0` to `1`.
+     *
+     * This is the general form of the on/off API: `1` is exactly
+     * [enableDivision], `0` is exactly [disableDivision], and anything between
+     * draws that division's fill over the leading part of its cell, mirrored
+     * under RTL. The classic use is a stories or chapters bar, where finished
+     * segments are full and the current one advances:
+     *
+     * ```kotlin
+     * bar.enabledDivisions = listOf(0, 1)      // chapters already read
+     * bar.setDivisionProgress(2, 0.4f)         // 40% through chapter 3
+     * ```
+     *
+     * Every [cornerMode] shapes the fill correctly. Under [CornerMode.EACH_RUN]
+     * it continues the run beside it: the joint with a full division before it
+     * is square, the division before it keeps its edge square in return, and
+     * the fill's moving edge carries the run's rounded end, so a stories bar
+     * reads as one pill growing through its cells. The other modes clip the
+     * fill to the cell's own shape. A partially filled division still reports
+     * `false` from [isDivisionEnabled] and is not counted by
+     * [completedSegmentCount]; it becomes part of the lit set only when its
+     * progress reaches `1`.
+     *
+     * Changes between partial values apply on the next frame with no
+     * transition, because the callers that drive this, playback positions and
+     * download progress, update it continuously and a built-in animation would
+     * fight them. Reaching `1` (or being enabled directly) hands over to
+     * [segmentAnimation] as usual, with a GROW transition continuing from the
+     * partial fill rather than restarting at zero.
+     *
+     * Values outside `0..1` are clamped, and negative indices are ignored,
+     * matching how progress data is treated everywhere else in this class.
+     *
+     * @throws IllegalArgumentException if [progress] is NaN or infinite, which
+     *   can only be a programming error.
+     */
+    public fun setDivisionProgress(index: Int, progress: Float) {
+        require(progress.isFinite()) { "progress must be finite but was $progress" }
+        if (index < 0) return
+        val fraction = progress.coerceIn(0f, 1f)
+
+        when {
+            fraction >= 1f -> {
+                // enableDivision syncs the animation targets, which both seeds
+                // the transition from the old partial value and clears it.
+                if (isDivisionEnabled(index)) {
+                    partialFills.delete(index)
+                } else {
+                    enableDivision(index)
+                }
+            }
+            fraction <= 0f -> {
+                if (partialFills[index] != null) {
+                    partialFills.delete(index)
+                    invalidateShadowCache()
+                }
+                if (isDivisionEnabled(index)) disableDivision(index) else invalidate()
+            }
+            else -> {
+                partialFills.put(index, fraction)
+                invalidateShadowCache()
+                if (enabled.remove(index)) {
+                    // Downgrading full to partial must not play the lit-to-off
+                    // transition underneath the partial fill, so this division's
+                    // animation state is snapped rather than routed through
+                    // onSegmentsChanged.
+                    ensureAnimationCapacity()
+                    if (index < animTargetLit.size) {
+                        animTargetLit[index] = false
+                        animStart[index] = 0L
+                        animFrom[index] = 0f
+                    }
+                }
+                invalidate()
+            }
+        }
+    }
+
+    /**
+     * How much of the division at [index] is filled, from `0` to `1`.
+     *
+     * `1` for a division in [enabledDivisions], the value last given to
+     * [setDivisionProgress] for a partial one, `0` otherwise. A division that is
+     * somehow both enabled and partial, which the setters never produce,
+     * reports `1`: enabled wins.
+     */
+    public fun getDivisionProgress(index: Int): Float = when {
+        index < 0 -> 0f
+        isDivisionEnabled(index) -> 1f
+        else -> partialFills[index] ?: 0f
+    }
+
+    /**
+     * Gives the division at [index] its own on-colour, superseding
+     * [progressBarColor] for that division only.
+     *
+     * The rule is exactly one sentence: **a colour set here wins over
+     * [progressBarColor] for its division; every division without one keeps
+     * using [progressBarColor].** Changing [progressBarColor] later never
+     * clears these overrides; [clearDivisionColor] and [clearDivisionColors]
+     * are the way back to the single-colour path.
+     *
+     * The override colours everything on-coloured in that division: its full
+     * fill, its partial fill from [setDivisionProgress], and the base a shimmer
+     * or pulse tints. Off segments always use [progressBarBackgroundColor].
+     * The classic use is a heatmap or streak calendar, where every cell is on
+     * and each carries an intensity:
+     *
+     * ```kotlin
+     * bar.enabledDivisions = (0 until bar.divisions).toList()
+     * intensities.forEachIndexed { index, level ->
+     *     bar.setDivisionColor(index, shadeFor(level))
+     * }
+     * ```
+     *
+     * Like every other colour on this view, overrides are not part of saved
+     * instance state. Negative indices are ignored; indices beyond [divisions]
+     * are retained and take effect if the bar later grows.
+     */
+    public fun setDivisionColor(index: Int, @ColorInt color: Int) {
+        if (index < 0) return
+        if (divisionColors.indexOfKey(index) >= 0 && divisionColors[index] == color) return
+        divisionColors.put(index, color)
+        invalidate()
+    }
+
+    /** Removes the [setDivisionColor] override at [index], if there is one. */
+    public fun clearDivisionColor(index: Int) {
+        val at = divisionColors.indexOfKey(index)
+        if (at < 0) return
+        divisionColors.removeAt(at)
+        invalidate()
+    }
+
+    /** Removes every [setDivisionColor] override, returning to one colour. */
+    public fun clearDivisionColors() {
+        if (divisionColors.size() == 0) return
+        divisionColors.clear()
+        invalidate()
+    }
+
+    /**
+     * The on-colour the division at [index] actually draws with: its
+     * [setDivisionColor] override if it has one, [progressBarColor] otherwise.
+     */
+    @ColorInt
+    public fun getDivisionColor(index: Int): Int = effectiveDivisionColor(index)
+
+    /** Whether the division at [index] has a [setDivisionColor] override. */
+    public fun hasDivisionColor(index: Int): Boolean = divisionColors.indexOfKey(index) >= 0
+
+    private fun effectiveDivisionColor(index: Int): Int =
+        if (divisionColors.indexOfKey(index) >= 0) {
+            divisionColors[index]
+        } else {
+            progressPaint.color
+        }
 
     /**
      * The index of the segment at horizontal position [x], or [NO_DIVISION] if
@@ -978,6 +1206,48 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             _isTapToToggleEnabled = value
             updateInteractivity()
         }
+
+    /**
+     * Whether each division is exposed to accessibility services as its own
+     * node.
+     *
+     * Off by default, or set from the `spb_perDivisionAccessibility` XML
+     * attribute; the default keeps the 2.0.0 behaviour, where the bar is a
+     * single node announcing "6 of 10 segments complete". Turning it on gives
+     * every division its own focusable, checkable node ("Segment 3 of 10",
+     * checked or not checked), which a screen reader can step through and,
+     * when the bar is interactive, toggle in place. It also enables keyboard
+     * use on an interactive bar: arrow keys move between divisions and Enter
+     * or the d-pad centre activates one, which is exactly the path that taps
+     * cannot serve, since an accessibility activation carries no coordinates.
+     *
+     * Activating a division behaves like tapping it: the division toggles if
+     * [isTapToToggleEnabled], and any [OnDivisionClickListener] is notified
+     * after. On a non-interactive bar the nodes are read-only state.
+     *
+     * Opt-in rather than always-on because it changes how the bar reads: one
+     * summary node is the right experience for a passive progress indicator,
+     * per-division nodes are the right experience for a control the user is
+     * expected to operate.
+     */
+    public var isPerDivisionAccessibilityEnabled: Boolean
+        get() = _isPerDivisionAccessibilityEnabled
+        set(value) {
+            if (_isPerDivisionAccessibilityEnabled == value) return
+            _isPerDivisionAccessibilityEnabled = value
+            applyPerDivisionAccessibility()
+        }
+
+    private fun applyPerDivisionAccessibility() {
+        if (_isPerDivisionAccessibilityEnabled) {
+            val helper = DivisionTouchHelper()
+            divisionTouchHelper = helper
+            ViewCompat.setAccessibilityDelegate(this, helper)
+        } else {
+            divisionTouchHelper = null
+            ViewCompat.setAccessibilityDelegate(this, null)
+        }
+    }
 
     /** Notified when the user taps an individual segment. */
     public fun interface OnDivisionClickListener {
@@ -1057,22 +1327,122 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         pendingTouchX = Float.NaN
 
         val index = if (touchX.isNaN()) NO_DIVISION else divisionAt(touchX)
-        if (index != NO_DIVISION) {
-            // Toggle first, so a listener sees the state the user is looking at.
-            if (_isTapToToggleEnabled) toggleDivision(index)
-            divisionClickListener?.onDivisionClick(this, index)
-        }
+        if (index != NO_DIVISION) activateDivision(index)
         return super.performClick()
     }
 
     /**
-     * Clears every lit segment, returning the bar to empty.
+     * What activating a division means, shared by taps and accessibility
+     * actions so the two can never drift apart.
+     */
+    private fun activateDivision(index: Int) {
+        // Toggle first, so a listener sees the state the user is looking at.
+        if (_isTapToToggleEnabled) toggleDivision(index)
+        divisionClickListener?.onDivisionClick(this, index)
+    }
+
+    // The three hooks ExploreByTouchHelper needs to see the world: hover for
+    // touch exploration, key events for arrow navigation, focus for keeping the
+    // virtual focus in step with input focus. All no-ops while the helper is
+    // absent, which is the default.
+
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean =
+        divisionTouchHelper?.dispatchHoverEvent(event) == true || super.dispatchHoverEvent(event)
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        divisionTouchHelper?.dispatchKeyEvent(event) == true || super.dispatchKeyEvent(event)
+
+    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        divisionTouchHelper?.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+    }
+
+    /**
+     * The virtual accessibility hierarchy behind
+     * [isPerDivisionAccessibilityEnabled]: one checkable node per division.
+     *
+     * Bounds are the full-height cell, gaps included, so there are no dead
+     * zones between nodes while exploring by touch, matching how [divisionAt]
+     * maps taps. RTL is resolved to physical coordinates here because
+     * accessibility bounds are physical.
+     */
+    private inner class DivisionTouchHelper :
+        ExploreByTouchHelper(this@SegmentedProgressBar) {
+
+        override fun getVirtualViewAt(x: Float, y: Float): Int {
+            val index = divisionAt(x)
+            return if (index == NO_DIVISION) HOST_ID else index
+        }
+
+        override fun getVisibleVirtualViews(virtualViewIds: MutableList<Int>) {
+            for (index in 0 until _divisions) virtualViewIds.add(index)
+        }
+
+        override fun onPopulateNodeForVirtualView(
+            virtualViewId: Int,
+            node: AccessibilityNodeInfoCompat,
+        ) {
+            node.className = "android.widget.ToggleButton"
+            node.contentDescription = resources.getString(
+                R.string.segmented_progress_bar_division_description,
+                virtualViewId + 1,
+                _divisions,
+            )
+            node.isCheckable = true
+            node.isChecked = isDivisionEnabled(virtualViewId)
+
+            if (isClickable && isEnabled) {
+                node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK)
+                node.isClickable = true
+            }
+
+            node.setBoundsInParent(divisionBounds(virtualViewId))
+        }
+
+        override fun onPerformActionForVirtualView(
+            virtualViewId: Int,
+            action: Int,
+            arguments: android.os.Bundle?,
+        ): Boolean {
+            if (action != AccessibilityNodeInfoCompat.ACTION_CLICK) return false
+            if (!isClickable || !isEnabled) return false
+
+            activateDivision(virtualViewId)
+            invalidateVirtualView(virtualViewId)
+            sendEventForVirtualView(virtualViewId, AccessibilityEvent.TYPE_VIEW_CLICKED)
+            return true
+        }
+
+        private fun divisionBounds(index: Int): Rect {
+            val contentWidth = (width - paddingLeft - paddingRight).toFloat()
+            if (contentWidth <= 0f) return Rect(0, 0, 1, 1)
+
+            var start = SegmentGeometry.boundary(contentWidth, _divisions, index)
+            var end = SegmentGeometry.boundary(contentWidth, _divisions, index + 1)
+            if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+                val mirrored = SegmentGeometry.mirror(contentWidth, end)
+                end = SegmentGeometry.mirror(contentWidth, start)
+                start = mirrored
+            }
+            return Rect(
+                paddingLeft + start.toInt(),
+                0,
+                paddingLeft + end.toInt(),
+                height,
+            )
+        }
+    }
+
+    /**
+     * Clears every lit segment and every partial fill, returning the bar to
+     * empty.
      *
      * [divisions] and all colour, divider and corner settings are preserved.
      */
     public fun reset() {
-        if (enabled.isEmpty()) return
+        if (enabled.isEmpty() && partialFills.size() == 0) return
         enabled.clear()
+        partialFills.clear()
         onSegmentsChanged()
     }
 
@@ -1131,6 +1501,11 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         playEntryAnimationIfNeeded()
     }
 
+    override fun onRtlPropertiesChanged(layoutDirection: Int) {
+        super.onRtlPropertiesChanged(layoutDirection)
+        invalidateShadowCache()
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         // The recurring loop drives itself from onDraw, and stops when detached
@@ -1173,10 +1548,17 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         segmentBand.radius =
             SegmentGeometry.clampCornerRadius(_cornerRadius, contentWidth, segmentBand.height)
 
+        // The shadow is blitted from a cache rendered only when the silhouette
+        // changes; a Paint shadow layer needs a software canvas, and rendering
+        // it once here is what lets the rest of the frame stay on hardware.
+        if (_shadowRadius > 0f) {
+            ensureShadowCache(contentWidth, dividerSpan, isRtl, now)
+            shadowCache?.let { canvas.drawBitmap(it, 0f, 0f, null) }
+        }
+
         val saveCount = canvas.save()
         canvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
 
-        drawShadows(canvas, contentWidth, dividerSpan, isRtl, now)
         drawTrack(canvas, contentWidth, dividerSpan, isRtl)
         drawSegments(canvas, contentWidth, dividerSpan, isRtl, now)
 
@@ -1206,6 +1588,51 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
     }
 
     /**
+     * Renders the shadow into [shadowCache] if anything about it has changed.
+     *
+     * Rebuild triggers, in order of how often they fire: a running toggle or
+     * entry transition (a GROW changes the silhouette every frame, so the cache
+     * follows it), an explicit [shadowCacheDirty] from a setter, and a size or
+     * padding change. Recurring animations never rebuild, which is the point:
+     * a shimmer only tints fills, so its frames blit the same bitmap.
+     */
+    private fun ensureShadowCache(
+        contentWidth: Float,
+        dividerSpan: Float,
+        isRtl: Boolean,
+        now: Long,
+    ) {
+        var cache = shadowCache
+        val stale = cache == null ||
+            cache.width != width ||
+            cache.height != height ||
+            shadowCachePaddingLeft != paddingLeft ||
+            shadowCachePaddingTop != paddingTop ||
+            shadowCacheDirty ||
+            hasRunningAnimation(now)
+        if (!stale) return
+
+        if (cache == null || cache.width != width || cache.height != height) {
+            shadowCache?.recycle()
+            cache = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            shadowCache = cache
+            shadowCacheCanvas = Canvas(cache)
+        } else {
+            cache.eraseColor(Color.TRANSPARENT)
+        }
+
+        val cacheCanvas = checkNotNull(shadowCacheCanvas)
+        val saveCount = cacheCanvas.save()
+        cacheCanvas.translate(paddingLeft.toFloat(), paddingTop.toFloat())
+        drawShadows(cacheCanvas, contentWidth, dividerSpan, isRtl, now)
+        cacheCanvas.restoreToCount(saveCount)
+
+        shadowCachePaddingLeft = paddingLeft
+        shadowCachePaddingTop = paddingTop
+        shadowCacheDirty = false
+    }
+
+    /**
      * Draws the drop shadow, once, behind everything else.
      *
      * The bar casts *one* shadow, shaped like its silhouette. Everything below
@@ -1226,10 +1653,14 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      *    bar. A shape at full shadow alpha under an anti-aliased fill edge showed
      *    through as a dark outline around every segment, and through anything
      *    translucent as dirt.
-     * 4. The gaps count as part of the silhouette, so a shadow is never drawn
-     *    *between* segments either. Otherwise a narrow gap fills in with blur from
-     *    both sides and becomes exactly the divider line that [CornerMode.EACH_RUN]
-     *    exists to get rid of.
+     * 4. A gap counts as part of the silhouette only where the paint actually
+     *    connects the two cells around it, see [gapIsConnected]: inside an
+     *    [CornerMode.EACH_RUN] run, where blur falling into the slit would draw
+     *    exactly the divider line that mode exists to get rid of, and under a
+     *    painted divider, which makes the bar one slab. A real opening is left
+     *    out of the silhouette entirely: the neighbours' blur spills into it,
+     *    so separate pieces cast like separate objects, instead of the shadow
+     *    sealing every slit and making an unpainted gap read as a painted line.
      *
      * [ShadowTarget] then chooses which cells contribute to the caster; a cell that
      * contributes nothing simply leaves that stretch of the outline unshadowed.
@@ -1260,31 +1691,55 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
 
         for (index in 0 until _divisions) {
             val isLit = fractionOf(index, now) > 0f
-            // Both shapes of a contributing cell go into the caster: the union of
-            // the two is what is actually visible there, and since it is one path,
-            // adding both cannot darken anything.
-            val casts = if (isLit) onWanted else offWanted && hasTrack
+            val partial = if (isLit) 0f else partialFills[index] ?: 0f
 
             if (hasTrack && computeSpan(contentWidth, dividerSpan, index, isRtl)) {
-                addSpanToPath(shadowClipPath, index, trackBand, isRtl, forSegment = false)
-                if (casts) addSpanToPath(shadowCastPath, index, trackBand, isRtl, false)
+                addSpanToPath(shadowClipPath, trackBand, trackCornersFor(index, isRtl))
+                // A lit cell's rail is covered by on-coloured content, so it
+                // follows the on target; the rail of a partial or off cell is
+                // off-coloured and follows the off target. Both shapes of a lit
+                // cell going into the caster is safe: it is one path, so the
+                // union cannot darken anything.
+                if (if (isLit) onWanted else offWanted) {
+                    addSpanToPath(shadowCastPath, trackBand, trackCornersFor(index, isRtl))
+                }
                 bandTop = minOf(bandTop, trackBand.top)
                 bandBottom = maxOf(bandBottom, trackBand.top + trackBand.height)
             }
             if (hasSegments && isLit) {
                 val growth = growthOf(fractionOf(index, now))
                 if (computeSpan(contentWidth, dividerSpan, index, isRtl, growth)) {
-                    addSpanToPath(shadowClipPath, index, segmentBand, isRtl, forSegment = true)
-                    if (casts) addSpanToPath(shadowCastPath, index, segmentBand, isRtl, true)
+                    addSpanToPath(shadowClipPath, segmentBand, cornersFor(index, isRtl))
+                    if (onWanted) {
+                        addSpanToPath(shadowCastPath, segmentBand, cornersFor(index, isRtl))
+                    }
                     bandTop = minOf(bandTop, segmentBand.top)
                     bandBottom = maxOf(bandBottom, segmentBand.top + segmentBand.height)
                 }
+            }
+            // A partial fill contributes the shape it actually draws, so a
+            // shadow can neither land beneath a translucent fill nor go missing
+            // over a transparent track. As on-coloured content, it follows the
+            // on target.
+            if (hasSegments && partial > 0f &&
+                computeSpan(contentWidth, dividerSpan, index, isRtl, growFraction = partial)
+            ) {
+                val corners = partialCornersFor(index, isRtl)
+                addSpanToPath(shadowClipPath, segmentBand, corners)
+                if (onWanted) addSpanToPath(shadowCastPath, segmentBand, corners)
+                bandTop = minOf(bandTop, segmentBand.top)
+                bandBottom = maxOf(bandBottom, segmentBand.top + segmentBand.height)
             }
         }
         if (shadowClipPath.isEmpty || shadowCastPath.isEmpty) return
 
         if (dividerSpan > 0f) {
             for (index in 1 until _divisions) {
+                // Only a gap inside one painted unit is sealed into the
+                // silhouette; a real opening is left out entirely, so the
+                // neighbours' blur spills into it and separate pieces read as
+                // separate objects instead of one slab with lines on it.
+                if (!gapIsConnected(index)) continue
                 scratchRect.set(
                     SegmentGeometry.dividerLeft(contentWidth, _divisions, dividerSpan, index),
                     bandTop,
@@ -1309,14 +1764,43 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         canvas.restoreToCount(saveCount)
     }
 
-    /** Whether cell [index] contributes to the shadow, given the current target. */
+    /**
+     * Whether the gap before cell [index] sits inside one painted unit rather
+     * than being a real opening.
+     *
+     * A painted divider makes the whole bar one slab, so every gap is sealed
+     * into the silhouette. A transparent gap connects only inside a
+     * [CornerMode.EACH_RUN] run, whose squared corners paint it as a single
+     * pill, including the joint where a run flows into the partial division
+     * continuing it. Every other transparent gap is an opening between
+     * separate pieces, and the shadow treats them as such.
+     */
+    private fun gapIsConnected(index: Int): Boolean {
+        if (Color.alpha(dividerPaint.color) > 0) return true
+        return _cornerMode == CornerMode.EACH_RUN &&
+            isDivisionEnabled(index - 1) &&
+            (isDivisionEnabled(index) || partialFills[index] != null)
+    }
+
+    /**
+     * Whether cell [index] contributes to the shadow, given the current target.
+     *
+     * A partially filled cell contributes twice over: its fill is on-coloured
+     * content and its visible rail is off-coloured, so it casts for either
+     * target. That is also what lets a run's shadow flow across the gap into
+     * the partial division that continues it under [ShadowTarget.ON_SEGMENTS].
+     */
     private fun castsShadow(
         index: Int,
         now: Long,
         onWanted: Boolean,
         offWanted: Boolean,
         hasTrack: Boolean,
-    ): Boolean = if (fractionOf(index, now) > 0f) onWanted else offWanted && hasTrack
+    ): Boolean = when {
+        fractionOf(index, now) > 0f -> onWanted
+        partialFills[index] != null -> onWanted || (offWanted && hasTrack)
+        else -> offWanted && hasTrack
+    }
 
     /**
      * Adds the span currently in [spanLeft] and [spanRight] to [path], rounded the
@@ -1328,12 +1812,9 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      */
     private fun addSpanToPath(
         path: Path,
-        index: Int,
         band: Band,
-        isRtl: Boolean,
-        forSegment: Boolean,
+        corners: Int,
     ) {
-        val corners = if (forSegment) cornersFor(index, isRtl) else trackCornersFor(index, isRtl)
         setRadii(
             roundLeft = corners and ROUND_LEFT != 0,
             roundRight = corners and ROUND_RIGHT != 0,
@@ -1424,10 +1905,20 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      * The exception matters: a cell that has a segment drawn over it takes that
      * segment's rounding. Otherwise, under [CornerMode.EACH_RUN], the square
      * corner of the rail showed through the rounded corner at the end of a run.
+     * A partially filled cell gets the same treatment on its leading side, where
+     * the fill's shape starts; its trailing side keeps the rail rule, because
+     * the visible remainder of the cell is plain track.
      */
     private fun trackCornersFor(index: Int, isRtl: Boolean): Int {
         if (_cornerMode == CornerMode.EACH_RUN && isDivisionEnabled(index)) {
             return cornersFor(index, isRtl)
+        }
+        if (_cornerMode == CornerMode.EACH_RUN && partialFills[index] != null) {
+            val roundsStart = index == 0 || !isDivisionEnabled(index - 1)
+            val roundsEnd = index == _divisions - 1
+            val left = if (isRtl) roundsEnd else roundsStart
+            val right = if (isRtl) roundsStart else roundsEnd
+            return (if (left) ROUND_LEFT else 0) or (if (right) ROUND_RIGHT else 0)
         }
         val roundsStart = _cornerMode == CornerMode.EACH_SEGMENT || index == 0
         val roundsEnd = _cornerMode == CornerMode.EACH_SEGMENT || index == _divisions - 1
@@ -1453,13 +1944,22 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         // that is neither lit nor in flight.
         for (index in 0 until _divisions) {
             val fraction = fractionOf(index, now)
-            if (fraction <= 0f) continue
+            if (fraction <= 0f) {
+                drawPartialFill(canvas, contentWidth, dividerSpan, index, isRtl, now)
+                continue
+            }
 
             if (!computeSpan(contentWidth, dividerSpan, index, isRtl, growthOf(fraction))) continue
 
-            // Recurring first, then the transition fade on top, so a segment
-            // arriving during a shimmer both tints and fades correctly.
-            var paintColor = recurringColorFor(index, baseColor, now)
+            // The division's own colour if it has one, then the recurring tint,
+            // then the transition fade on top, so a segment arriving during a
+            // shimmer both tints and fades correctly.
+            val divisionBase = if (divisionColors.indexOfKey(index) >= 0) {
+                divisionColors[index]
+            } else {
+                baseColor
+            }
+            var paintColor = recurringColorFor(index, divisionBase, now)
             if (activeTransitionStyle == SegmentAnimation.FADE && fraction < 1f) {
                 // Scaling the colour's alpha channel rather than calling
                 // Paint.setAlpha: the two are equivalent for a solid paint, but
@@ -1492,6 +1992,134 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         if (activeTransitionStyle == SegmentAnimation.GROW) fraction else 1f
 
     /**
+     * Draws the partial fill for division [index], if it has one.
+     *
+     * The fill covers the leading [getDivisionProgress] of the cell, RTL
+     * mirrored, in the shape given by [partialCornersFor]. Under
+     * [CornerMode.EACH_RUN] that shape is exact and is drawn directly: the
+     * moving edge carries the run's rounded end, so no clip is needed, a fill
+     * approaching `1` lands exactly on the cell's silhouette. The other modes
+     * draw a straight-edged sweep clipped to the cell's standalone shape, which
+     * is what keeps them honest: without the clip, a fill approaching `1` under
+     * a large radius pokes its square cut edge out past the rounded silhouette.
+     */
+    private fun drawPartialFill(
+        canvas: Canvas,
+        contentWidth: Float,
+        dividerSpan: Float,
+        index: Int,
+        isRtl: Boolean,
+        now: Long,
+    ) {
+        if (partialFills.size() == 0) return
+        val fill = partialFills[index] ?: return
+
+        val baseColor = progressPaint.color
+        val divisionBase = if (divisionColors.indexOfKey(index) >= 0) {
+            divisionColors[index]
+        } else {
+            baseColor
+        }
+        val paintColor = recurringColorFor(index, divisionBase, now)
+
+        if (_cornerMode == CornerMode.EACH_RUN) {
+            if (!computeSpan(contentWidth, dividerSpan, index, isRtl, growFraction = fill)) return
+            if (progressPaint.color != paintColor) progressPaint.color = paintColor
+            val corners = partialCornersFor(index, isRtl)
+            drawSpan(
+                canvas = canvas,
+                left = spanLeft,
+                right = spanRight,
+                top = segmentBand.top,
+                height = segmentBand.height,
+                roundLeft = corners and ROUND_LEFT != 0,
+                roundRight = corners and ROUND_RIGHT != 0,
+                radius = segmentBand.radius,
+                paint = progressPaint,
+            )
+            if (progressPaint.color != baseColor) progressPaint.color = baseColor
+            return
+        }
+
+        // The clip: the whole cell, rounded as a standalone segment.
+        if (!computeSpan(contentWidth, dividerSpan, index, isRtl)) return
+        val corners = standaloneCornersFor(index, isRtl)
+        setRadii(
+            roundLeft = corners and ROUND_LEFT != 0,
+            roundRight = corners and ROUND_RIGHT != 0,
+            radius = segmentBand.radius,
+            width = spanRight - spanLeft,
+            height = segmentBand.height,
+        )
+        scratchRect.set(
+            spanLeft,
+            segmentBand.top,
+            spanRight,
+            segmentBand.top + segmentBand.height,
+        )
+        scratchPath.rewind()
+        scratchPath.addRoundRect(scratchRect, scratchRadii, Path.Direction.CW)
+
+        // The filled leading portion, reusing the GROW span maths so RTL comes
+        // out right for free.
+        if (!computeSpan(contentWidth, dividerSpan, index, isRtl, growFraction = fill)) return
+
+        if (progressPaint.color != paintColor) progressPaint.color = paintColor
+
+        val saveCount = canvas.save()
+        canvas.clipPath(scratchPath)
+        canvas.drawRect(
+            spanLeft,
+            segmentBand.top,
+            spanRight,
+            segmentBand.top + segmentBand.height,
+            progressPaint,
+        )
+        canvas.restoreToCount(saveCount)
+
+        if (progressPaint.color != baseColor) progressPaint.color = baseColor
+    }
+
+    /**
+     * Which sides of the partial fill at [index] are rounded.
+     *
+     * Under [CornerMode.EACH_RUN] the fill continues the run beside it: the
+     * joint with a full division before it is square, and the moving edge
+     * always carries the run's rounded end. With nothing full before it, the
+     * fill is its own in-progress pill. The other modes use the standalone
+     * cell shape the fill is clipped to.
+     */
+    private fun partialCornersFor(index: Int, isRtl: Boolean): Int {
+        if (_cornerMode != CornerMode.EACH_RUN) return standaloneCornersFor(index, isRtl)
+        val roundsStart = index == 0 || !isDivisionEnabled(index - 1)
+        val left = if (isRtl) true else roundsStart
+        val right = if (isRtl) roundsStart else true
+        return (if (left) ROUND_LEFT else 0) or (if (right) ROUND_RIGHT else 0)
+    }
+
+    /**
+     * Which sides of division [index] would be rounded if it stood alone,
+     * ignoring any run it might otherwise join.
+     */
+    private fun standaloneCornersFor(index: Int, isRtl: Boolean): Int {
+        val roundsStart: Boolean
+        val roundsEnd: Boolean
+        when (_cornerMode) {
+            CornerMode.EACH_SEGMENT, CornerMode.EACH_RUN -> {
+                roundsStart = true
+                roundsEnd = true
+            }
+            CornerMode.BAR_ENDS -> {
+                roundsStart = index == 0
+                roundsEnd = index == _divisions - 1
+            }
+        }
+        val left = if (isRtl) roundsEnd else roundsStart
+        val right = if (isRtl) roundsStart else roundsEnd
+        return (if (left) ROUND_LEFT else 0) or (if (right) ROUND_RIGHT else 0)
+    }
+
+    /**
      * Which sides of segment [index] are rounded, as a [ROUND_LEFT]/[ROUND_RIGHT]
      * bitmask already mapped from bar-relative start/end onto physical
      * left/right.
@@ -1507,10 +2135,17 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
                 roundsEnd = true
             }
             CornerMode.EACH_RUN -> {
-                // An edge is rounded unless it butts up against another lit
-                // segment, which is what makes a run read as a single pill.
+                // An edge is rounded unless it butts up against another filled
+                // segment, which is what makes a run read as a single pill. A
+                // partial fill counts on the trailing side: the run flows
+                // squarely into the division that continues it, and the
+                // partial's moving edge carries the run's rounded end instead.
+                // It does not count on the leading side, because a fill below
+                // `1` never reaches the boundary, so the segment after it
+                // starts a fresh pill.
                 roundsStart = index == 0 || !isDivisionEnabled(index - 1)
-                roundsEnd = index == _divisions - 1 || !isDivisionEnabled(index + 1)
+                roundsEnd = index == _divisions - 1 ||
+                    !(isDivisionEnabled(index + 1) || partialFills[index + 1] != null)
             }
             CornerMode.BAR_ENDS -> {
                 roundsStart = index == 0
@@ -1595,7 +2230,9 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
 
     override fun onSaveInstanceState(): Parcelable {
         val superState = super.onSaveInstanceState() ?: AbsSavedState.EMPTY_STATE
-        return SavedState(superState, _divisions, enabled.toIntArray())
+        val partialIndices = IntArray(partialFills.size()) { partialFills.keyAt(it) }
+        val partialValues = FloatArray(partialFills.size()) { partialFills.valueAt(it) }
+        return SavedState(superState, _divisions, enabled.toIntArray(), partialIndices, partialValues)
     }
 
     override fun onRestoreInstanceState(state: Parcelable?) {
@@ -1608,6 +2245,10 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         enabled.clear()
         for (index in state.enabledDivisions) {
             enabled.add(index)
+        }
+        partialFills.clear()
+        for (i in state.partialIndices.indices) {
+            partialFills.put(state.partialIndices[i], state.partialValues[i])
         }
         // Restored state is the starting state, so it must not animate in.
         ensureAnimationCapacity()
@@ -1648,15 +2289,26 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             shadowPaint.setShadowLayer(_shadowRadius, _shadowDx, _shadowDy, _shadowColor)
         } else {
             shadowPaint.clearShadowLayer()
+            // Give the cache's memory back the moment it stops earning it.
+            shadowCache?.recycle()
+            shadowCache = null
+            shadowCacheCanvas = null
         }
+        shadowCacheDirty = true
+        invalidate()
+    }
 
-        // Android drops Paint shadow layers for shapes on a hardware accelerated
-        // canvas, so the view has to render into a software layer for the shadow
-        // to appear at all. The layer also bounds the shadow: it is the size of
-        // the view, so a shadow needs room from padding rather than from the
-        // parent.
-        val wanted = if (_shadowRadius > 0f) LAYER_TYPE_SOFTWARE else LAYER_TYPE_NONE
-        if (layerType != wanted) setLayerType(wanted, null)
+    /**
+     * Marks the shadow cache stale.
+     *
+     * Called by every setter whose value shapes the silhouette: geometry,
+     * corner treatment, band heights, the lit set, partial fills, and the track
+     * colour's transparency, which decides whether the track is part of the
+     * silhouette at all. Cheap enough to call unconditionally; the rebuild
+     * happens lazily on the next frame that actually has a shadow.
+     */
+    private fun invalidateShadowCache() {
+        shadowCacheDirty = true
     }
 
     /**
@@ -1721,12 +2373,23 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
 
         for (index in 0 until _divisions) {
             val lit = litScratch[index]
+
+            // A division that becomes fully lit retires its partial fill; the
+            // fill is folded into the transition's starting point below, so a
+            // GROW continues from where the partial had got to.
+            val partial = if (lit) (partialFills[index] ?: 0f) else 0f
+            if (lit && partial > 0f) partialFills.delete(index)
+
             if (lit == animTargetLit[index]) continue
 
             // Capture where the segment is *now*, before the target moves, so an
             // interrupted transition continues from its current position rather
             // than snapping back.
-            animFrom[index] = if (animate) fractionOf(index, now) else if (lit) 0f else 1f
+            animFrom[index] = when {
+                animate -> maxOf(fractionOf(index, now), partial)
+                lit -> 0f
+                else -> 1f
+            }
             animTargetLit[index] = lit
             animStart[index] = if (animate) now else 0L
         }
@@ -1896,6 +2559,10 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         activeTransitionStyle = _segmentAnimation
         animDelay.fill(0L)
         syncAnimationTargets()
+        invalidateShadowCache()
+        // The virtual accessibility tree mirrors divisions and their checked
+        // state, so any change here invalidates it wholesale.
+        divisionTouchHelper?.invalidateRoot()
         invalidate()
     }
 
@@ -1905,25 +2572,35 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
 
         val divisions: Int
         val enabledDivisions: IntArray
+        val partialIndices: IntArray
+        val partialValues: FloatArray
 
         constructor(
             superState: Parcelable,
             divisions: Int,
             enabledDivisions: IntArray,
+            partialIndices: IntArray,
+            partialValues: FloatArray,
         ) : super(superState) {
             this.divisions = divisions
             this.enabledDivisions = enabledDivisions
+            this.partialIndices = partialIndices
+            this.partialValues = partialValues
         }
 
         private constructor(source: Parcel) : super(source) {
             divisions = source.readInt()
             enabledDivisions = source.createIntArray() ?: IntArray(0)
+            partialIndices = source.createIntArray() ?: IntArray(0)
+            partialValues = source.createFloatArray() ?: FloatArray(0)
         }
 
         override fun writeToParcel(out: Parcel, flags: Int) {
             super.writeToParcel(out, flags)
             out.writeInt(divisions)
             out.writeIntArray(enabledDivisions)
+            out.writeIntArray(partialIndices)
+            out.writeFloatArray(partialValues)
         }
 
         companion object {

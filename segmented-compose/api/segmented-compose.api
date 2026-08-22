@@ -1,0 +1,39 @@
+public final class com.rachitgoyal.segmented.compose.SegmentShadow {
+  public boolean equals(java.lang.Object);
+  public com.rachitgoyal.segmented.compose.SegmentShadow(float, float, float, long, com.rachitgoyal.segmented.ShadowTarget, int, kotlin.jvm.internal.DefaultConstructorMarker);
+  public com.rachitgoyal.segmented.compose.SegmentShadow(float, float, float, long, com.rachitgoyal.segmented.ShadowTarget, kotlin.jvm.internal.DefaultConstructorMarker);
+  public final com.rachitgoyal.segmented.ShadowTarget component5();
+  public final com.rachitgoyal.segmented.ShadowTarget getTarget();
+  public final com.rachitgoyal.segmented.compose.SegmentShadow copy-Kk6tgiQ(float, float, float, long, com.rachitgoyal.segmented.ShadowTarget);
+  public final float component1-D9Ej5fM();
+  public final float component2-D9Ej5fM();
+  public final float component3-D9Ej5fM();
+  public final float getDx-D9Ej5fM();
+  public final float getDy-D9Ej5fM();
+  public final float getRadius-D9Ej5fM();
+  public final long component4-0d7_KjU();
+  public final long getColor-0d7_KjU();
+  public int hashCode();
+  public java.lang.String toString();
+  public static com.rachitgoyal.segmented.compose.SegmentShadow copy-Kk6tgiQ$default(com.rachitgoyal.segmented.compose.SegmentShadow, float, float, float, long, com.rachitgoyal.segmented.ShadowTarget, int, java.lang.Object);
+  public static final int $stable;
+}
+public final class com.rachitgoyal.segmented.compose.SegmentedProgressBarDefaults {
+  public final float getCornerRadius-D9Ej5fM();
+  public final float getGap-D9Ej5fM();
+  public final float getIntrinsicHeight-D9Ej5fM();
+  public final float getIntrinsicWidth-D9Ej5fM();
+  public final long getOffColor-0d7_KjU();
+  public final long getOnColor-0d7_KjU();
+  public final long getShadowColor-0d7_KjU();
+  public final long getShimmerColor-0d7_KjU();
+  public static final com.rachitgoyal.segmented.compose.SegmentedProgressBarDefaults INSTANCE;
+  public static final int $stable;
+  public static final int AnimationDurationMillis;
+  public static final int EntryStaggerDelayMillis;
+  public static final int RecurringDurationMillis;
+}
+public final class com.rachitgoyal.segmented.compose.SegmentedProgressBarKt {
+  public static final void SegmentedProgressBar-RruUS1g(int, java.util.Set, androidx.compose.ui.Modifier, long, long, float, long, float, com.rachitgoyal.segmented.CornerMode, float, float, com.rachitgoyal.segmented.compose.SegmentShadow, com.rachitgoyal.segmented.SegmentAnimation, com.rachitgoyal.segmented.EntryAnimation, com.rachitgoyal.segmented.RecurringAnimation, int, int, int, long, java.lang.String, kotlin.jvm.functions.Function1, androidx.compose.runtime.Composer, int, int, int, int);
+  public static final void SegmentedProgressBar-zpbNqVk(int, java.util.Set<java.lang.Integer>, androidx.compose.ui.Modifier, long, long, float, long, float, com.rachitgoyal.segmented.CornerMode, float, float, com.rachitgoyal.segmented.compose.SegmentShadow, com.rachitgoyal.segmented.SegmentAnimation, com.rachitgoyal.segmented.EntryAnimation, com.rachitgoyal.segmented.RecurringAnimation, int, int, int, long, java.lang.String, java.util.Map<java.lang.Integer, androidx.compose.ui.graphics.Color>, java.util.Map<java.lang.Integer, java.lang.Float>, boolean, kotlin.jvm.functions.Function1<? super java.lang.Integer, kotlin.Unit>, androidx.compose.runtime.Composer, int, int, int, int);
+}

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
@@ -43,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -128,7 +130,11 @@ private class PlaygroundState {
     var shadowDy by mutableStateOf(3.dp)
     var shadowTarget by mutableStateOf(ShadowTarget.ALL)
 
-    var tapToToggle by mutableStateOf(true)
+    var tapMode by mutableStateOf(TapMode.TOGGLE)
+    var perSegmentA11y by mutableStateOf(false)
+
+    /** Partial fills by segment index, any number of them, like the API's map. */
+    var partials by mutableStateOf(mapOf<Int, Float>())
 
     var segmentAnimation by mutableStateOf(SegmentAnimation.FADE)
     var entryAnimation by mutableStateOf(EntryAnimation.STAGGER)
@@ -151,17 +157,58 @@ private class PlaygroundState {
             null
         }
 
-    fun toggle(index: Int) {
-        lit = if (index in lit) lit - index else lit + index
+    /**
+     * What a tap on the bar does, depending on [tapMode]: toggle the segment,
+     * or step its fill up by a quarter, wrapping from full back to empty. The
+     * quarter steps are what makes multiple partial fills quick to build by
+     * hand; the real API takes any fraction.
+     */
+    fun tap(index: Int) {
+        when (tapMode) {
+            TapMode.TOGGLE -> {
+                lit = if (index in lit) lit - index else lit + index
+                partials = partials - index
+            }
+            TapMode.QUARTERS -> {
+                val current = if (index in lit) 1f else partials[index] ?: 0f
+                val next = current + 0.25f
+                when {
+                    current >= 1f -> {
+                        lit = lit - index
+                        partials = partials - index
+                    }
+                    next >= 1f -> {
+                        lit = lit + index
+                        partials = partials - index
+                    }
+                    else -> partials = partials + (index to next)
+                }
+            }
+            TapMode.NOTHING -> Unit
+        }
     }
 
-    fun clampLitToDivisions() {
+    fun clearFills() {
+        partials = emptyMap()
+    }
+
+    fun clampToDivisions() {
         lit = lit.filter { it < divisions }.toSet()
+        partials = partials.filterKeys { it < divisions }
     }
 }
 
 @Composable
 private fun rememberPlaygroundState() = remember { PlaygroundState() }
+
+/** What tapping a segment on the preview bar does. */
+private enum class TapMode { TOGGLE, QUARTERS, NOTHING }
+
+private fun TapMode.label() = when (this) {
+    TapMode.TOGGLE -> "toggles it"
+    TapMode.QUARTERS -> "adds 25%"
+    TapMode.NOTHING -> "nothing"
+}
 
 private val OnPresets = listOf(
     Color(0xFF2F6FED),
@@ -234,10 +281,16 @@ private fun PinnedPreview(state: PlaygroundState) {
                         recurringAnimation = state.recurring,
                         animationDurationMillis = state.durationMs,
                         recurringDurationMillis = state.recurringMs,
+                        segmentProgress = state.partials,
+                        perSegmentAccessibility = state.perSegmentA11y,
                         // Compose holds the lit set outside the bar, so an
                         // interactive bar is one with a click handler and a
                         // read-only one is one without.
-                        onSegmentClick = if (state.tapToToggle) state::toggle else null,
+                        onSegmentClick = if (state.tapMode == TapMode.NOTHING) {
+                            null
+                        } else {
+                            state::tap
+                        },
                     )
                 }
             }
@@ -250,16 +303,33 @@ private fun PinnedPreview(state: PlaygroundState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            if (state.partials.isNotEmpty()) {
+                Text(
+                    text = "segmentProgress = ${state.partials.toSortedMap()}",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             Spacer(Modifier.height(10.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { state.lit = (0 until state.divisions).toSet() }) {
-                    Text("All")
-                }
-                FilledTonalButton(onClick = { state.lit = emptySet() }) { Text("None") }
+                FilledTonalButton(
+                    onClick = {
+                        state.lit = (0 until state.divisions).toSet()
+                        state.clearFills()
+                    },
+                ) { Text("All") }
+                FilledTonalButton(
+                    onClick = {
+                        state.lit = emptySet()
+                        state.clearFills()
+                    },
+                ) { Text("None") }
                 FilledTonalButton(
                     onClick = {
                         state.lit = (0 until state.divisions).filter { (it * 7) % 3 != 0 }.toSet()
+                        state.clearFills()
                     },
                 ) { Text("Shuffle") }
                 OutlinedButton(onClick = { state.replayKey++ }) { Text("Replay") }
@@ -276,10 +346,12 @@ private fun PinnedPreview(state: PlaygroundState) {
 private fun SegmentsCard(state: PlaygroundState) {
     PlaygroundCard(
         title = "Segments",
-        subtitle = if (state.tapToToggle) {
-            "Tap the bar above to turn segments on and off"
-        } else {
-            "Touch is off, so the bar above ignores taps"
+        subtitle = when (state.tapMode) {
+            TapMode.TOGGLE -> "Tap the bar above to turn segments on and off"
+            TapMode.QUARTERS ->
+                "Tap the bar above: each tap fills that segment by another quarter, " +
+                    "on any number of segments, and a full segment wraps back to empty"
+            TapMode.NOTHING -> "Touch is off, so the bar above ignores taps"
         },
     ) {
         SliderRow(
@@ -290,12 +362,20 @@ private fun SegmentsCard(state: PlaygroundState) {
             display = "${state.divisions}",
         ) {
             state.divisions = it.roundToInt()
-            state.clampLitToDivisions()
+            state.clampToDivisions()
         }
 
-        ToggleRow(label = "Tapping a segment toggles it", checked = state.tapToToggle) {
-            state.tapToToggle = it
-        }
+        ChoiceRow(
+            label = "Tapping a segment",
+            options = TapMode.entries,
+            selected = state.tapMode,
+            name = { it.label() },
+        ) { state.tapMode = it }
+
+        ToggleRow(
+            label = "Each segment is its own accessibility node",
+            checked = state.perSegmentA11y,
+        ) { state.perSegmentA11y = it }
     }
 }
 
@@ -683,11 +763,15 @@ private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // The whole row is the control, not just the switch: a larger
+            // target, and accessibility services read the label and the state
+            // as one thing.
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onChange)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = labelStyle(), modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

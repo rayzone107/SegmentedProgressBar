@@ -5,6 +5,9 @@
     <string name="tab_playground">Playground</string>
     <string name="tab_gallery">Gallery</string>
 
+    <string name="action_dark_theme">Switch to dark theme</string>
+    <string name="action_light_theme">Switch to light theme</string>
+
     <string name="section_toggle">Tap any segment</string>
     <string name="section_toggle_caption">Tap segments in any order to turn them on and off.</string>
     <string name="toggle_bar_description">Tap a segment to toggle it</string>
@@ -14,6 +17,12 @@
 
     <string name="section_habit">Use case: a weekly habit tracker</string>
     <string name="section_habit_caption">Seven divisions, one per day. Missed days stay off.</string>
+
+    <string name="section_stories">Partial fills</string>
+    <string name="section_stories_caption">setDivisionProgress: finished chapters are full, the current one is 40% through. Progress 1 is exactly enableDivision.</string>
+
+    <string name="section_heatmap">Per-division colours</string>
+    <string name="section_heatmap_caption">setDivisionColor gives one division its own colour, superseding progressBarColor for that division only. This bar also sets spb_perDivisionAccessibility, so a screen reader steps through its cells.</string>
 
     <string name="section_pill">Gaps without dividers</string>
     <string name="section_pill_caption">isDividerEnabled=false, so adjacent segments that are on merge into a single run.</string>

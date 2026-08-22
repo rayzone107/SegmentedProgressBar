@@ -4,6 +4,75 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-22
+
+Feature release. Everything is additive: code compiled against 2.0.0 keeps
+working, source and binary alike, and `apiCheck` now enforces that in CI.
+
+### Added
+
+- **Partial fills.** `setDivisionProgress(index, fraction)` and
+  `getDivisionProgress(index)` on the View, `segmentProgress: Map<Int, Float>`
+  in Compose. Every division has a fill fraction: `1` is exactly
+  `enableDivision`, `0` exactly `disableDivision`, and anything between draws
+  the leading part of the cell, RTL mirrored, on any number of divisions at
+  once. This is the stories and chapters pattern. A partial division is not
+  enabled and not counted by `completedSegmentCount`. Every corner mode shapes
+  the fill correctly: under `EACH_RUN` it continues the run beside it, joining
+  squarely while its moving edge carries the run's rounded end; the other
+  modes clip it to the cell's shape. Partial changes apply without transition,
+  and reaching `1` hands over to `segmentAnimation` with a GROW continuing
+  from the fill rather than restarting. Partial fills participate in the drop
+  shadow's silhouette and survive instance state.
+- **Per-division colours.** `setDivisionColor(index, color)`,
+  `clearDivisionColor(index)`, `clearDivisionColors()`, `getDivisionColor` and
+  `hasDivisionColor` on the View, `segmentColors: Map<Int, Color>` in Compose.
+  One rule: a colour set for a division wins over `progressBarColor` for that
+  division only; everything else keeps the single-colour path, and changing the
+  global colour never clears overrides. Covers the full fill, the partial fill
+  and the base a shimmer or pulse tints. Built for heatmaps and streak
+  calendars.
+- **Opt-in per-division accessibility.** `isPerDivisionAccessibilityEnabled`
+  (`spb_perDivisionAccessibility` in XML) on the View,
+  `perSegmentAccessibility` in Compose. Off by default, preserving the 2.0.0
+  single-summary-node behaviour. On, every division is its own focusable,
+  checkable node that a screen reader steps through and, on an interactive bar,
+  toggles in place; activation shares the tap code path (toggle first, then
+  notify the listener). The View additionally gains keyboard navigation: arrows
+  move between divisions, Enter activates. Adds the library's one dependency
+  beyond annotations, `androidx.customview`, for `ExploreByTouchHelper`.
+- **API surface lock.** The public API of both modules is a checked-in dump
+  (`api/<module>.api`); `apiCheck` fails CI whenever the compiled surface stops
+  matching it, and `apiDump` regenerates it for intentional changes. The 2.0.0
+  Compose signature is retained as a hidden bridge, so binaries compiled
+  against 2.0.0 keep linking even though the composable gained parameters.
+- **(Demo app)** The Playground gained a partial-fill tap mode, where each tap
+  adds a quarter fill to any segment and the readout shows the exact
+  `segmentProgress` map the bar receives, and the toolbar gained a light/dark
+  toggle that remembers its choice, so every feature can be checked in both
+  themes without touching system settings.
+
+### Changed
+
+- **A shadow no longer seals unpainted gaps.** A gap belongs to the shadow's
+  silhouette only where the paint connects the cells around it: under a
+  painted divider, which makes the bar one slab, and inside an `EACH_RUN` run,
+  including the joint where a run flows into its partial. A transparent gap
+  between separate pieces is now an opening the neighbours' blur spills into,
+  so each piece casts like its own object. Previously the shadow bridged every
+  gap, which made an unpainted gap read as a painted divider line the moment
+  a shadow surrounded it.
+- **A shadow no longer forces a software layer.** The View renders the shadow
+  into a cached bitmap rebuilt only when the silhouette changes and blits it
+  each frame, so the view stays fully hardware accelerated; previously every
+  frame of a shimmer re-rasterised the whole view in software. Same memory as
+  the layer it replaces, freed when the radius drops to zero.
+- **Compose shimmer no longer recomposes per frame.** The recurring phase is
+  now read only inside the draw pass, and the shadow's paths are built in
+  `drawWithCache` and survive across frames, so a shimmer frame is a redraw
+  and nothing more. Every pixel-level rendering test passes unchanged in both
+  renderers.
+
 ## [2.0.0] - 2026-08-21
 
 The first release in eight years. The library is brought up to a current
@@ -112,7 +181,7 @@ documentation. The Java API from 0.0.1 still compiles, see
 - **Accessibility.** The bar reports itself as a `ProgressBar` and supplies a
   localised, correctly pluralised content description such as
   "6 of 10 segments complete" when the caller has not set one.
-- **A test suite of 261 tests** covering geometry, attribute parsing, validation,
+- **A test suite of 314 tests** covering geometry, attribute parsing, validation,
   drawing output, corner modes, height bands, gaps, size constraints, drop
   shadow, toggle/entry/recurring animation, touch handling, RTL, padding, instance
   state, accessibility, Java interoperability, the Compose bindings and the demo

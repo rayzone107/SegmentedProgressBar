@@ -79,6 +79,11 @@ kotlin {
 
 dependencies {
     implementation(libs.androidx.annotation)
+    // For ExploreByTouchHelper, behind isPerDivisionAccessibilityEnabled. The
+    // one dependency this library takes beyond annotations, because a correct
+    // virtual accessibility hierarchy is genuinely hard to hand-roll and every
+    // app already ships this artifact transitively.
+    implementation(libs.androidx.customview)
 
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

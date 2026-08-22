@@ -202,7 +202,8 @@ class SegmentedProgressBarShadowTest {
     fun `a gap grows no dark tick above the bar`() {
         // Regression: with one blur per cell, the two neighbouring blurs met inside
         // the gap and added up, which read as a dark tick poking out above and
-        // below the bar at every gap. One blur of one shape cannot do that.
+        // below the bar at every gap. One blur of one shape cannot do that; an
+        // open gap may dip lighter above the slit, but never darker.
         val bar = newGappedBar()
         val image = render(bar)
 
@@ -210,15 +211,60 @@ class SegmentedProgressBarShadowTest {
         val aboveCell = Color.alpha(image.getPixel(LIT_X, ABOVE_BAR_Y))
 
         assertThat(aboveCell).isGreaterThan(0)
-        assertThat(aboveGap).isWithin(SHADE).of(aboveCell)
+        assertThat(aboveGap).isAtMost(aboveCell + SHADE)
     }
 
     @Test
-    fun `no shadow is drawn inside a gap`() {
-        // Otherwise a narrow gap fills in with blur from both sides and becomes
-        // exactly the divider line that leaving it transparent asked to be rid of.
+    fun `an unpainted gap is an opening the shadow spills into`() {
+        // The gap borders two separate pieces, so it must read as space between
+        // them: their blur falls in, exactly as it falls beside the bar's outer
+        // ends. Sealing it left a bright page-coloured slit that read as a
+        // painted divider line the moment a shadow surrounded it.
         val plain = render(newGappedBar { shadowRadius = 0f })
         val shadowed = render(newGappedBar())
+
+        assertThat(Color.alpha(plain.getPixel(GAP_X, MID_BAR_Y))).isEqualTo(0)
+        assertThat(Color.alpha(shadowed.getPixel(GAP_X, MID_BAR_Y))).isGreaterThan(0)
+    }
+
+    @Test
+    fun `a gap inside an each_run run stays sealed`() {
+        // Within a run the squared corners paint one pill, and blur falling
+        // into its slit would draw exactly the divider line EACH_RUN exists to
+        // get rid of.
+        val configure: SegmentedProgressBar.() -> Unit = {
+            enabledDivisions = listOf(1, 2)
+            cornerMode = CornerMode.EACH_RUN
+        }
+        val plain = render(newGappedBar { configure(); shadowRadius = 0f })
+        val shadowed = render(newGappedBar(configure))
+
+        for (x in GAP_X - 1..GAP_X + 1) {
+            assertThat(shadowed.getPixel(x, MID_BAR_Y)).isEqualTo(plain.getPixel(x, MID_BAR_Y))
+        }
+    }
+
+    @Test
+    fun `the gap where a run flows into its partial stays sealed too`() {
+        val configure: SegmentedProgressBar.() -> Unit = {
+            enabledDivisions = listOf(1)
+            cornerMode = CornerMode.EACH_RUN
+            setDivisionProgress(2, 0.5f)
+        }
+        val plain = render(newGappedBar { configure(); shadowRadius = 0f })
+        val shadowed = render(newGappedBar(configure))
+
+        assertThat(shadowed.getPixel(GAP_X, MID_BAR_Y))
+            .isEqualTo(plain.getPixel(GAP_X, MID_BAR_Y))
+    }
+
+    @Test
+    fun `a painted divider seals every gap`() {
+        // An opaque divider makes the bar one slab; shadow on the painted line
+        // would read as dirt.
+        val configure: SegmentedProgressBar.() -> Unit = { dividerColor = Color.WHITE }
+        val plain = render(newGappedBar { configure(); shadowRadius = 0f })
+        val shadowed = render(newGappedBar(configure))
 
         for (x in GAP_X - 1..GAP_X + 1) {
             assertThat(shadowed.getPixel(x, MID_BAR_Y)).isEqualTo(plain.getPixel(x, MID_BAR_Y))
@@ -279,6 +325,74 @@ class SegmentedProgressBarShadowTest {
         assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isEqualTo(0)
         assertThat(shadowAt(bar, LIT_X, ABOVE_BAR_Y)).isGreaterThan(0)
     }
+
+    // region cache staleness
+    //
+    // The shadow renders through a cached bitmap, so the risky failure mode is
+    // no longer wrong pixels but STALE pixels: a silhouette change that the
+    // cache misses. Each test here renders the same instance twice, which is
+    // exactly the path that hits the cache.
+
+    @Test
+    fun `the shadow follows the lit set from one frame to the next`() {
+        val bar = newBar { shadowTarget = ShadowTarget.ON_SEGMENTS }
+
+        render(bar) // primes the cache with only division 1 lit
+        assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isEqualTo(0)
+
+        bar.enableDivision(3)
+
+        assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isGreaterThan(0)
+    }
+
+    @Test
+    fun `the shadow follows a partial fill from one frame to the next`() {
+        val bar = newBar {
+            shadowTarget = ShadowTarget.ON_SEGMENTS
+            progressBarBackgroundColor = Color.TRANSPARENT
+            enabledDivisions = emptyList()
+        }
+
+        render(bar)
+        assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isEqualTo(0)
+
+        // Division 3 spans 138.5..178; a 0.9 fill reaches under UNLIT_X at 158.
+        bar.setDivisionProgress(3, 0.9f)
+
+        assertThat(shadowAt(bar, UNLIT_X, ABOVE_BAR_Y)).isGreaterThan(0)
+    }
+
+    @Test
+    fun `the shadow follows a divider colour change from one frame to the next`() {
+        // The divider's alpha decides whether the gaps are sealed into the
+        // silhouette, so repainting it must invalidate the cache.
+        val bar = newGappedBar { dividerColor = Color.WHITE }
+
+        render(bar) // primes the cache with the gaps sealed
+        bar.dividerColor = Color.TRANSPARENT
+
+        // Open gaps take the neighbours' spill; a stale sealed cache has none.
+        assertThat(shadowAt(bar, GAP_X, MID_BAR_Y)).isGreaterThan(0)
+    }
+
+    @Test
+    fun `the shadow follows a corner mode change from one frame to the next`() {
+        val bar = newBar {
+            cornerRadius = 15f
+            cornerMode = CornerMode.BAR_ENDS
+        }
+
+        render(bar)
+        val squareCorner = shadowAt(bar, LIT_X - 18, ABOVE_BAR_Y + 1)
+
+        bar.cornerMode = CornerMode.EACH_SEGMENT
+
+        // Rounding every cell pulls the silhouette in at each cell's corners,
+        // which must change what the blur reaches there.
+        assertThat(shadowAt(bar, LIT_X - 18, ABOVE_BAR_Y + 1)).isNotEqualTo(squareCorner)
+    }
+
+    // endregion
 
     @Test
     fun `the shadow fades outwards from the edge of the bar`() {
