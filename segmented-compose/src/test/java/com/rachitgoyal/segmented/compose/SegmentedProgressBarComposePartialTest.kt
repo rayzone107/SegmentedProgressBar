@@ -19,10 +19,12 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
+import com.rachitgoyal.segmented.CornerMode
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -59,16 +61,22 @@ class SegmentedProgressBarComposePartialTest {
     private var lit by mutableStateOf(setOf(0))
     private var progress by mutableStateOf(mapOf(1 to 0.5f))
     private var rtl by mutableStateOf(false)
+    private var corners by mutableStateOf(CornerMode.BAR_ENDS)
+    private var radius by mutableStateOf(0.dp)
     private var composed = false
 
     private fun render(
         lit: Set<Int> = setOf(0),
         progress: Map<Int, Float> = mapOf(1 to 0.5f),
         rtl: Boolean = false,
+        corners: CornerMode = CornerMode.BAR_ENDS,
+        radius: Dp = 0.dp,
     ): Bitmap {
         this.lit = lit
         this.progress = progress
         this.rtl = rtl
+        this.corners = corners
+        this.radius = radius
         if (!composed) {
             composed = true
             composeRule.setContent {
@@ -85,7 +93,8 @@ class SegmentedProgressBarComposePartialTest {
                             onColor = ON,
                             offColor = OFF,
                             gap = 0.dp,
-                            cornerRadius = 0.dp,
+                            cornerRadius = this@SegmentedProgressBarComposePartialTest.radius,
+                            cornerMode = this@SegmentedProgressBarComposePartialTest.corners,
                             segmentProgress =
                                 this@SegmentedProgressBarComposePartialTest.progress,
                         )
@@ -137,6 +146,57 @@ class SegmentedProgressBarComposePartialTest {
         render(lit = setOf(0), progress = mapOf(1 to 0.9f))
 
         composeRule.onNodeWithContentDescription("1 of 4 segments complete").assertExists()
+    }
+
+    @Test
+    fun `under each_run a partial continues the run before it`() {
+        // Cells are 40px: the run covers 20..100 and the fill goes on to 120.
+        val image = render(
+            lit = setOf(0, 1),
+            progress = mapOf(2 to 0.5f),
+            corners = CornerMode.EACH_RUN,
+            radius = 4.dp,
+        )
+
+        // The run's last segment keeps its trailing corner square where the
+        // fill continues it: the top corner pixels on both sides of the joint
+        // at x=100 are painted fill.
+        assertThat(image.getPixel(98, 20)).isEqualTo(android.graphics.Color.RED)
+        assertThat(image.getPixel(101, 20)).isEqualTo(android.graphics.Color.RED)
+        // The moving edge at x=120 carries the run's rounded end: just inside
+        // it, the top corner belongs to the rail behind, not the fill.
+        assertThat(image.getPixel(119, 20)).isEqualTo(android.graphics.Color.GREEN)
+    }
+
+    @Test
+    fun `under each_run a standalone partial is its own pill and shapes its rail`() {
+        val image = render(
+            lit = emptySet(),
+            progress = mapOf(2 to 0.5f),
+            corners = CornerMode.EACH_RUN,
+            radius = 4.dp,
+        )
+
+        // Nothing full precedes the fill, so its leading corner at x=100 is
+        // rounded, and the rail beneath rounds its own start to match rather
+        // than poking a square corner through: the pixel shows the page.
+        assertThat(image.getPixel(101, 20)).isEqualTo(android.graphics.Color.WHITE)
+    }
+
+    @Test
+    fun `under each_run and RTL the joint stays between run and fill`() {
+        val image = render(
+            lit = setOf(0, 1),
+            progress = mapOf(2 to 0.5f),
+            rtl = true,
+            corners = CornerMode.EACH_RUN,
+            radius = 4.dp,
+        )
+
+        // The run mirrors to 100..180 and the fill hugs cell 2's right edge,
+        // 80..100. Square at the joint, rounded at the moving edge.
+        assertThat(image.getPixel(98, 20)).isEqualTo(android.graphics.Color.RED)
+        assertThat(image.getPixel(81, 20)).isEqualTo(android.graphics.Color.GREEN)
     }
 
     @Test

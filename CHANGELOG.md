@@ -15,13 +15,15 @@ working, source and binary alike, and `apiCheck` now enforces that in CI.
   `getDivisionProgress(index)` on the View, `segmentProgress: Map<Int, Float>`
   in Compose. Every division has a fill fraction: `1` is exactly
   `enableDivision`, `0` exactly `disableDivision`, and anything between draws
-  the leading part of the cell, RTL mirrored and clipped to the cell's shape so
-  every corner mode renders correctly. This is the stories and chapters
-  pattern. A partial division is not enabled, not counted by
-  `completedSegmentCount`, and not part of an `EACH_RUN` run; partial changes
-  apply without transition, and reaching `1` hands over to `segmentAnimation`
-  with a GROW continuing from the fill rather than restarting. Partial fills
-  participate in the drop shadow's silhouette and survive instance state.
+  the leading part of the cell, RTL mirrored, on any number of divisions at
+  once. This is the stories and chapters pattern. A partial division is not
+  enabled and not counted by `completedSegmentCount`. Every corner mode shapes
+  the fill correctly: under `EACH_RUN` it continues the run beside it, joining
+  squarely while its moving edge carries the run's rounded end; the other
+  modes clip it to the cell's shape. Partial changes apply without transition,
+  and reaching `1` hands over to `segmentAnimation` with a GROW continuing
+  from the fill rather than restarting. Partial fills participate in the drop
+  shadow's silhouette and survive instance state.
 - **Per-division colours.** `setDivisionColor(index, color)`,
   `clearDivisionColor(index)`, `clearDivisionColors()`, `getDivisionColor` and
   `hasDivisionColor` on the View, `segmentColors: Map<Int, Color>` in Compose.
@@ -44,8 +46,9 @@ working, source and binary alike, and `apiCheck` now enforces that in CI.
   matching it, and `apiDump` regenerates it for intentional changes. The 2.0.0
   Compose signature is retained as a hidden bridge, so binaries compiled
   against 2.0.0 keep linking even though the composable gained parameters.
-- **(Demo app)** The Playground gained a partial fill control that shows the
-  exact `segmentProgress` map it passes, and the toolbar gained a light/dark
+- **(Demo app)** The Playground gained a partial-fill tap mode, where each tap
+  adds a quarter fill to any segment and the readout shows the exact
+  `segmentProgress` map the bar receives, and the toolbar gained a light/dark
   toggle that remembers its choice, so every feature can be checked in both
   themes without touching system settings.
 

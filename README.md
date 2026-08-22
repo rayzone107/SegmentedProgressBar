@@ -353,10 +353,18 @@ SegmentedProgressBar(
 
 The rules, all deliberate:
 
-- A partial division is **not** enabled: `isDivisionEnabled` reports `false`,
-  `completedSegmentCount` does not count it, and it never joins a
-  `CornerMode.EACH_RUN` run; the fill draws as its own in-progress pill, clipped
-  to the cell's shape so every corner mode renders correctly.
+- A partial division is **not** enabled: `isDivisionEnabled` reports `false`
+  and `completedSegmentCount` does not count it; it joins the lit set only when
+  its fraction reaches `1`.
+- Any number of divisions can carry a partial at once; each is just a fraction
+  by index.
+- Every corner mode shapes the fill correctly. Under `CornerMode.EACH_RUN` the
+  fill continues the run beside it: the joint is square on both sides and the
+  fill's moving edge carries the run's rounded end, so a stories bar reads as
+  one pill growing through its cells. The other modes clip the fill to the
+  cell's own shape.
+
+![A rounded run flowing into a partial segment under EACH_RUN](docs/images/partial-each-run.png)
 - Changes between partial values apply with no transition, because the callers
   that drive them (playback positions, download progress) update continuously
   and a built-in animation would fight them.
@@ -968,7 +976,7 @@ full list; the short version:
 git clone https://github.com/rayzone107/SegmentedProgressBar.git
 cd SegmentedProgressBar
 
-./gradlew test                  # 314 unit tests across three modules
+./gradlew test                  # 329 unit tests across three modules
 ./gradlew lint                  # must report zero findings
 ./gradlew :app:installDebug     # the demo app
 ```

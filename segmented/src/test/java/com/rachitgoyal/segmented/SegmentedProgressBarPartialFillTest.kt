@@ -15,6 +15,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * Tests for partial fills: [SegmentedProgressBar.setDivisionProgress] and
@@ -23,8 +24,13 @@ import org.robolectric.Shadows.shadowOf
  * The fixture matches the other drawing tests: a 300 x 40 bar with 4 divisions
  * and no divider, so each cell is exactly 75px wide and the arithmetic stays
  * checkable by eye. Division 1 spans 75..150.
+ *
+ * [GraphicsMode.Mode.NATIVE] because the corner-mode tests read pixels: which
+ * side of a fill is rounded is invisible to the recorded draw ops, so those
+ * tests sample the corners of the real raster instead.
  */
 @RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class SegmentedProgressBarPartialFillTest {
 
     private companion object {
@@ -236,6 +242,77 @@ class SegmentedProgressBarPartialFillTest {
         val settled = render(bar).ops.ofRgb(PROGRESS).single()
         assertThat(settled.width).isWithin(0.01f).of(CELL)
         assertThat(bar.getDivisionProgress(1)).isEqualTo(1f)
+    }
+
+    // endregion
+
+    // region corner modes
+
+    @Test
+    fun `under each_run a partial continues the run before it`() {
+        val bar = newBar {
+            cornerRadius = 8f
+            cornerMode = CornerMode.EACH_RUN
+            enabledDivisions = listOf(0, 1)
+        }
+        bar.setDivisionProgress(2, 0.5f)
+
+        val canvas = render(bar)
+        val segments = canvas.ops.ofColor(PROGRESS).sortedBy { it.left }
+
+        assertThat(segments).hasSize(3)
+        // Segment 1 no longer closes the run: both its edges are square, so it
+        // falls back to drawRect and records as unrounded.
+        assertThat(segments[1].rounded).isFalse()
+        // The fill covers the leading half of cell 2 and joins the run
+        // squarely: the top pixel at the joint is painted fill.
+        assertThat(segments[2].left).isWithin(0.01f).of(2 * CELL)
+        assertThat(segments[2].right).isWithin(0.01f).of(2.5f * CELL)
+        assertThat(canvas.bitmap.getPixel(150, 0)).isEqualTo(PROGRESS)
+        // The moving edge carries the run's rounded end: just inside it, the
+        // top corner belongs to the rail behind, not the fill.
+        assertThat(canvas.bitmap.getPixel(186, 0)).isEqualTo(TRACK)
+    }
+
+    @Test
+    fun `under each_run a standalone partial is its own pill and shapes its rail`() {
+        val bar = newBar {
+            cornerRadius = 8f
+            cornerMode = CornerMode.EACH_RUN
+        }
+        bar.setDivisionProgress(2, 0.5f)
+
+        val canvas = render(bar)
+
+        // Nothing full precedes the fill, so its leading corner is rounded,
+        // and the rail beneath rounds its own start to match rather than
+        // poking a square corner through: the corner pixel is empty entirely.
+        assertThat(canvas.bitmap.getPixel(150, 0)).isEqualTo(Color.TRANSPARENT)
+        val track = canvas.ops.ofColor(TRACK).sortedBy { it.left }
+        assertThat(track[2].rounded).isTrue()
+        // The rail elsewhere is untouched: interior off cells stay square.
+        assertThat(track[1].rounded).isFalse()
+    }
+
+    @Test
+    fun `under each_run and RTL the joint stays between run and fill`() {
+        val bar = newBar {
+            cornerRadius = 8f
+            cornerMode = CornerMode.EACH_RUN
+            enabledDivisions = listOf(0, 1)
+        }
+        forceRtl(bar)
+        bar.setDivisionProgress(2, 0.5f)
+
+        val canvas = render(bar)
+
+        // Logical cell 2 mirrors to 75..150 and the fill hugs its right edge.
+        val fill = canvas.ops.ofColor(PROGRESS).sortedBy { it.left }.first()
+        assertThat(fill.right).isWithin(0.01f).of(2 * CELL)
+        assertThat(fill.left).isWithin(0.01f).of(1.5f * CELL)
+        // Square at the joint with the run, rounded at the moving edge.
+        assertThat(canvas.bitmap.getPixel(149, 0)).isEqualTo(PROGRESS)
+        assertThat(canvas.bitmap.getPixel(113, 0)).isEqualTo(TRACK)
     }
 
     // endregion

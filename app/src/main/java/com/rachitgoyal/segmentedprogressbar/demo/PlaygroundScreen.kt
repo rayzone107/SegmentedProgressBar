@@ -130,12 +130,11 @@ private class PlaygroundState {
     var shadowDy by mutableStateOf(3.dp)
     var shadowTarget by mutableStateOf(ShadowTarget.ALL)
 
-    var tapToToggle by mutableStateOf(true)
+    var tapMode by mutableStateOf(TapMode.TOGGLE)
     var perSegmentA11y by mutableStateOf(false)
 
-    var partialOn by mutableStateOf(false)
-    var partialIndex by mutableIntStateOf(3)
-    var partialFraction by mutableFloatStateOf(0.4f)
+    /** Partial fills by segment index, any number of them, like the API's map. */
+    var partials by mutableStateOf(mapOf<Int, Float>())
 
     var segmentAnimation by mutableStateOf(SegmentAnimation.FADE)
     var entryAnimation by mutableStateOf(EntryAnimation.STAGGER)
@@ -159,28 +158,57 @@ private class PlaygroundState {
         }
 
     /**
-     * The map handed to the bar, rounded to two decimals so the readout under
-     * the preview shows the same value the bar draws.
+     * What a tap on the bar does, depending on [tapMode]: toggle the segment,
+     * or step its fill up by a quarter, wrapping from full back to empty. The
+     * quarter steps are what makes multiple partial fills quick to build by
+     * hand; the real API takes any fraction.
      */
-    val segmentProgress: Map<Int, Float>
-        get() = if (partialOn) {
-            mapOf(partialIndex to (partialFraction * 100).roundToInt() / 100f)
-        } else {
-            emptyMap()
+    fun tap(index: Int) {
+        when (tapMode) {
+            TapMode.TOGGLE -> {
+                lit = if (index in lit) lit - index else lit + index
+                partials = partials - index
+            }
+            TapMode.QUARTERS -> {
+                val current = if (index in lit) 1f else partials[index] ?: 0f
+                val next = current + 0.25f
+                when {
+                    current >= 1f -> {
+                        lit = lit - index
+                        partials = partials - index
+                    }
+                    next >= 1f -> {
+                        lit = lit + index
+                        partials = partials - index
+                    }
+                    else -> partials = partials + (index to next)
+                }
+            }
+            TapMode.NOTHING -> Unit
         }
+    }
 
-    fun toggle(index: Int) {
-        lit = if (index in lit) lit - index else lit + index
+    fun clearFills() {
+        partials = emptyMap()
     }
 
     fun clampToDivisions() {
         lit = lit.filter { it < divisions }.toSet()
-        partialIndex = partialIndex.coerceIn(0, divisions - 1)
+        partials = partials.filterKeys { it < divisions }
     }
 }
 
 @Composable
 private fun rememberPlaygroundState() = remember { PlaygroundState() }
+
+/** What tapping a segment on the preview bar does. */
+private enum class TapMode { TOGGLE, QUARTERS, NOTHING }
+
+private fun TapMode.label() = when (this) {
+    TapMode.TOGGLE -> "toggles it"
+    TapMode.QUARTERS -> "adds 25%"
+    TapMode.NOTHING -> "nothing"
+}
 
 private val OnPresets = listOf(
     Color(0xFF2F6FED),
@@ -253,12 +281,16 @@ private fun PinnedPreview(state: PlaygroundState) {
                         recurringAnimation = state.recurring,
                         animationDurationMillis = state.durationMs,
                         recurringDurationMillis = state.recurringMs,
-                        segmentProgress = state.segmentProgress,
+                        segmentProgress = state.partials,
                         perSegmentAccessibility = state.perSegmentA11y,
                         // Compose holds the lit set outside the bar, so an
                         // interactive bar is one with a click handler and a
                         // read-only one is one without.
-                        onSegmentClick = if (state.tapToToggle) state::toggle else null,
+                        onSegmentClick = if (state.tapMode == TapMode.NOTHING) {
+                            null
+                        } else {
+                            state::tap
+                        },
                     )
                 }
             }
@@ -271,9 +303,9 @@ private fun PinnedPreview(state: PlaygroundState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            if (state.partialOn) {
+            if (state.partials.isNotEmpty()) {
                 Text(
-                    text = "segmentProgress = ${state.segmentProgress}",
+                    text = "segmentProgress = ${state.partials.toSortedMap()}",
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -282,13 +314,22 @@ private fun PinnedPreview(state: PlaygroundState) {
             Spacer(Modifier.height(10.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { state.lit = (0 until state.divisions).toSet() }) {
-                    Text("All")
-                }
-                FilledTonalButton(onClick = { state.lit = emptySet() }) { Text("None") }
+                FilledTonalButton(
+                    onClick = {
+                        state.lit = (0 until state.divisions).toSet()
+                        state.clearFills()
+                    },
+                ) { Text("All") }
+                FilledTonalButton(
+                    onClick = {
+                        state.lit = emptySet()
+                        state.clearFills()
+                    },
+                ) { Text("None") }
                 FilledTonalButton(
                     onClick = {
                         state.lit = (0 until state.divisions).filter { (it * 7) % 3 != 0 }.toSet()
+                        state.clearFills()
                     },
                 ) { Text("Shuffle") }
                 OutlinedButton(onClick = { state.replayKey++ }) { Text("Replay") }
@@ -305,10 +346,12 @@ private fun PinnedPreview(state: PlaygroundState) {
 private fun SegmentsCard(state: PlaygroundState) {
     PlaygroundCard(
         title = "Segments",
-        subtitle = if (state.tapToToggle) {
-            "Tap the bar above to turn segments on and off"
-        } else {
-            "Touch is off, so the bar above ignores taps"
+        subtitle = when (state.tapMode) {
+            TapMode.TOGGLE -> "Tap the bar above to turn segments on and off"
+            TapMode.QUARTERS ->
+                "Tap the bar above: each tap fills that segment by another quarter, " +
+                    "on any number of segments, and a full segment wraps back to empty"
+            TapMode.NOTHING -> "Touch is off, so the bar above ignores taps"
         },
     ) {
         SliderRow(
@@ -322,50 +365,17 @@ private fun SegmentsCard(state: PlaygroundState) {
             state.clampToDivisions()
         }
 
-        ToggleRow(label = "Tapping a segment toggles it", checked = state.tapToToggle) {
-            state.tapToToggle = it
-        }
+        ChoiceRow(
+            label = "Tapping a segment",
+            options = TapMode.entries,
+            selected = state.tapMode,
+            name = { it.label() },
+        ) { state.tapMode = it }
 
         ToggleRow(
             label = "Each segment is its own accessibility node",
             checked = state.perSegmentA11y,
         ) { state.perSegmentA11y = it }
-
-        ToggleRow(
-            label = "One segment is partially filled",
-            checked = state.partialOn,
-        ) { state.partialOn = it }
-
-        if (state.partialOn) {
-            if (state.divisions > 1) {
-                SliderRow(
-                    label = "Which segment",
-                    value = state.partialIndex.toFloat(),
-                    range = 0f..(state.divisions - 1).toFloat(),
-                    steps = (state.divisions - 2).coerceAtLeast(0),
-                    display = "${state.partialIndex}",
-                ) { state.partialIndex = it.roundToInt() }
-            }
-
-            SliderRow(
-                label = "Fill",
-                value = state.partialFraction,
-                range = 0f..1f,
-                steps = 0,
-                display = state.partialFraction.asPercent(),
-            ) { state.partialFraction = it }
-
-            // The library's rule, demonstrated rather than hidden: turning the
-            // same segment fully on makes the partial entry inert.
-            if (state.partialIndex in state.lit) {
-                Text(
-                    text = "Segment ${state.partialIndex} is on, so the partial " +
-                        "is ignored: a full segment supersedes its entry.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
     }
 }
 

@@ -141,6 +141,17 @@ class DocsScreenshotTest {
             dividerWidth = dp(4).toFloat()
             cornerRadius = dp(4).toFloat()
         },
+        // The same stories pattern under EACH_RUN: the run flows squarely into
+        // the partial division that continues it, whose moving edge carries
+        // the run's rounded end.
+        "partial-each-run" to {
+            divisions = 5
+            enabledDivisions = listOf(0, 1)
+            setDivisionProgress(2, 0.4f)
+            cornerMode = CornerMode.EACH_RUN
+            cornerRadius = dp(13).toFloat()
+            dividerWidth = dp(4).toFloat()
+        },
         // A heatmap: every division on, each with its own colour.
         "heatmap" to {
             divisions = 14

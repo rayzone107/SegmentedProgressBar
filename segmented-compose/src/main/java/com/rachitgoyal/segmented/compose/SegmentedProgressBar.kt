@@ -126,10 +126,12 @@ import kotlinx.coroutines.launch
  * @param segmentProgress fractional fills by segment index, `0` to `1`, for
  *   segments that are underway rather than done: the stories or chapters
  *   pattern, where finished segments are in [enabledSegments] and the current
- *   one advances through a fraction. A segment that is already in
- *   [enabledSegments] ignores its entry here, and a partial segment never joins
- *   a [CornerMode.EACH_RUN] run; it draws as its own in-progress pill, clipped
- *   to the cell's shape. Values are clamped to `0..1`, and change with no
+ *   one advances through a fraction. Any number of segments can carry one. A
+ *   segment that is already in [enabledSegments] ignores its entry here. Every
+ *   [cornerMode] shapes the fill correctly: under [CornerMode.EACH_RUN] it
+ *   continues the run beside it, joining it squarely while the fill's moving
+ *   edge carries the run's rounded end; the other modes clip the fill to the
+ *   cell's own shape. Values are clamped to `0..1`, and change with no
  *   transition, since the callers that drive this update it continuously.
  * @param onSegmentClick invoked with the index of a tapped segment. Passing
  *   `null` leaves the bar non-interactive.
@@ -724,7 +726,21 @@ private class BarRenderer(
             }
             followsRun -> {
                 roundsStart = index == 0 || (index - 1) !in onSegments
-                roundsEnd = index == divisions - 1 || (index + 1) !in onSegments
+                // A partial fill counts on the trailing side: the run flows
+                // squarely into the segment that continues it, and the fill's
+                // moving edge carries the run's rounded end instead. It does
+                // not count on the leading side, because a fill below 1 never
+                // reaches the boundary.
+                roundsEnd = index == divisions - 1 ||
+                    ((index + 1) !in onSegments && partialOf(index + 1) <= 0f)
+            }
+            cornerMode == CornerMode.EACH_RUN && partialOf(index) > 0f -> {
+                // The rail under a partial fill gets the run exception on its
+                // leading side too, where the fill's shape starts; the trailing
+                // side keeps the rail rule, because the visible remainder of
+                // the cell is plain track.
+                roundsStart = index == 0 || (index - 1) !in onSegments
+                roundsEnd = index == divisions - 1
             }
             else -> {
                 roundsStart = index == 0
@@ -735,10 +751,26 @@ private class BarRenderer(
     }
 
     /**
+     * Which sides of the partial fill at [index] are rounded.
+     *
+     * Under [CornerMode.EACH_RUN] the fill continues the run beside it: the
+     * joint with a full segment before it is square, and the moving edge
+     * always carries the run's rounded end. With nothing full before it, the
+     * fill is its own in-progress pill. The other modes use the standalone
+     * cell shape the fill is clipped to.
+     */
+    private fun partialCornersOf(index: Int): Pair<Boolean, Boolean> {
+        if (cornerMode != CornerMode.EACH_RUN) return standaloneCornersOf(index)
+        val roundsStart = index == 0 || (index - 1) !in onSegments
+        return if (isRtl) true to roundsStart else roundsStart to true
+    }
+
+    /**
      * Which sides of segment [index] would be rounded if it stood alone.
      *
-     * A partial fill uses this rather than [cornersOf]: an in-progress segment
-     * is not part of the run beside it, so it draws as its own pill.
+     * The clipped partial fills of [CornerMode.BAR_ENDS] and
+     * [CornerMode.EACH_SEGMENT] take the cell shape from here;
+     * [CornerMode.EACH_RUN] fills use [partialCornersOf] instead.
      */
     private fun standaloneCornersOf(index: Int): Pair<Boolean, Boolean> {
         val roundsStart: Boolean
@@ -807,10 +839,15 @@ private class BarRenderer(
         val wantsOn = shadow.target == ShadowTarget.ON_SEGMENTS ||
             shadow.target == ShadowTarget.ALL
 
-        // For gap bridging: a partial cell follows the off target, because only
-        // its rail spans the whole cell; its fill never reaches the gap.
-        fun castsShadow(index: Int): Boolean =
-            if (fractionOf(index) > 0f) wantsOn else wantsOff && hasTrack
+        // For gap bridging: a lit cell follows the on target. A partial cell
+        // contributes both its on-coloured fill and its off-coloured rail, so
+        // it casts for either target, which is what lets a run's shadow flow
+        // across the gap into the partial segment that continues it.
+        fun castsShadow(index: Int): Boolean = when {
+            fractionOf(index) > 0f -> wantsOn
+            partialOf(index) > 0f -> wantsOn || (wantsOff && hasTrack)
+            else -> wantsOff && hasTrack
+        }
 
         /**
          * Builds the shadow's caster into [path], grown by [spread] on every side.
@@ -873,7 +910,7 @@ private class BarRenderer(
                     val width = (cellRight - cellLeft) * partial
                     val left = if (isRtl) cellRight - width else cellLeft
                     val right = left + width
-                    val (roundLeft, roundRight) = standaloneCornersOf(index)
+                    val (roundLeft, roundRight) = partialCornersOf(index)
                     path.addRoundRect(
                         roundRectOf(
                             left - spread, right + spread,
@@ -947,11 +984,30 @@ private class BarRenderer(
                     val (cellLeft, cellRight) = spanOf(index)
                     if (cellRight - cellLeft <= 0f) continue
 
-                    // The fill covers the leading part of the cell, clipped to the
-                    // shape the cell would have as a standalone lit segment. The
-                    // clip is what keeps every corner mode honest: without it, a
-                    // fill approaching 1 under a large radius pokes its square cut
-                    // edge out past the cell's rounded silhouette.
+                    val width = (cellRight - cellLeft) * fill
+                    val fillLeft = if (isRtl) cellRight - width else cellLeft
+
+                    if (cornerMode == CornerMode.EACH_RUN) {
+                        // The exact shape, drawn directly: the moving edge
+                        // carries the run's rounded end and the joint with a
+                        // full segment before it is square, so the fill
+                        // continues the run beside it. At 1 the shape lands
+                        // exactly on the cell's silhouette, so no clip is
+                        // needed.
+                        val (roundLeft, roundRight) = partialCornersOf(index)
+                        drawSpan(
+                            fillLeft, fillLeft + width, segmentTop, segmentHeight,
+                            roundLeft, roundRight, segmentRadius,
+                            animatedOnColor(index, recurringPhase),
+                        )
+                        continue
+                    }
+
+                    // BAR_ENDS and EACH_SEGMENT: a straight-edged sweep clipped
+                    // to the shape the cell would have as a standalone lit
+                    // segment. The clip is what keeps them honest: without it,
+                    // a fill approaching 1 under a large radius pokes its
+                    // square cut edge out past the cell's rounded silhouette.
                     val (roundLeft, roundRight) = standaloneCornersOf(index)
                     val cellShape = Path().apply {
                         addRoundRect(
@@ -961,8 +1017,6 @@ private class BarRenderer(
                             ),
                         )
                     }
-                    val width = (cellRight - cellLeft) * fill
-                    val fillLeft = if (isRtl) cellRight - width else cellLeft
                     clipPath(cellShape) {
                         drawRect(
                             color = animatedOnColor(index, recurringPhase),

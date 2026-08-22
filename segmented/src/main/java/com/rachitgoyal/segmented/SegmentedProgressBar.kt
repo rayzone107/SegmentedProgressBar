@@ -989,12 +989,15 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      * bar.setDivisionProgress(2, 0.4f)         // 40% through chapter 3
      * ```
      *
-     * The fill is clipped to the shape the cell would have as a standalone lit
-     * segment, so every [cornerMode] renders it correctly; under
-     * [CornerMode.EACH_RUN] a partial division does not join the run beside it.
-     * A partially filled division reports `false` from [isDivisionEnabled] and
-     * is not counted by [completedSegmentCount]; it becomes part of the lit set
-     * only when its progress reaches `1`.
+     * Every [cornerMode] shapes the fill correctly. Under [CornerMode.EACH_RUN]
+     * it continues the run beside it: the joint with a full division before it
+     * is square, the division before it keeps its edge square in return, and
+     * the fill's moving edge carries the run's rounded end, so a stories bar
+     * reads as one pill growing through its cells. The other modes clip the
+     * fill to the cell's own shape. A partially filled division still reports
+     * `false` from [isDivisionEnabled] and is not counted by
+     * [completedSegmentCount]; it becomes part of the lit set only when its
+     * progress reaches `1`.
      *
      * Changes between partial values apply on the next frame with no
      * transition, because the callers that drive this, playback positions and
@@ -1025,7 +1028,10 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
                 }
             }
             fraction <= 0f -> {
-                partialFills.delete(index)
+                if (partialFills[index] != null) {
+                    partialFills.delete(index)
+                    invalidateShadowCache()
+                }
                 if (isDivisionEnabled(index)) disableDivision(index) else invalidate()
             }
             else -> {
@@ -1704,14 +1710,14 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
                     bandBottom = maxOf(bandBottom, segmentBand.top + segmentBand.height)
                 }
             }
-            // A partial fill contributes the shape it actually draws, standalone
-            // corners and all, so a shadow can neither land beneath a translucent
-            // fill nor go missing over a transparent track. As on-coloured
-            // content, it follows the on target.
+            // A partial fill contributes the shape it actually draws, so a
+            // shadow can neither land beneath a translucent fill nor go missing
+            // over a transparent track. As on-coloured content, it follows the
+            // on target.
             if (hasSegments && partial > 0f &&
                 computeSpan(contentWidth, dividerSpan, index, isRtl, growFraction = partial)
             ) {
-                val corners = standaloneCornersFor(index, isRtl)
+                val corners = partialCornersFor(index, isRtl)
                 addSpanToPath(shadowClipPath, segmentBand, corners)
                 if (onWanted) addSpanToPath(shadowCastPath, segmentBand, corners)
                 bandTop = minOf(bandTop, segmentBand.top)
@@ -1746,14 +1752,25 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         canvas.restoreToCount(saveCount)
     }
 
-    /** Whether cell [index] contributes to the shadow, given the current target. */
+    /**
+     * Whether cell [index] contributes to the shadow, given the current target.
+     *
+     * A partially filled cell contributes twice over: its fill is on-coloured
+     * content and its visible rail is off-coloured, so it casts for either
+     * target. That is also what lets a run's shadow flow across the gap into
+     * the partial division that continues it under [ShadowTarget.ON_SEGMENTS].
+     */
     private fun castsShadow(
         index: Int,
         now: Long,
         onWanted: Boolean,
         offWanted: Boolean,
         hasTrack: Boolean,
-    ): Boolean = if (fractionOf(index, now) > 0f) onWanted else offWanted && hasTrack
+    ): Boolean = when {
+        fractionOf(index, now) > 0f -> onWanted
+        partialFills[index] != null -> onWanted || (offWanted && hasTrack)
+        else -> offWanted && hasTrack
+    }
 
     /**
      * Adds the span currently in [spanLeft] and [spanRight] to [path], rounded the
@@ -1858,10 +1875,20 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      * The exception matters: a cell that has a segment drawn over it takes that
      * segment's rounding. Otherwise, under [CornerMode.EACH_RUN], the square
      * corner of the rail showed through the rounded corner at the end of a run.
+     * A partially filled cell gets the same treatment on its leading side, where
+     * the fill's shape starts; its trailing side keeps the rail rule, because
+     * the visible remainder of the cell is plain track.
      */
     private fun trackCornersFor(index: Int, isRtl: Boolean): Int {
         if (_cornerMode == CornerMode.EACH_RUN && isDivisionEnabled(index)) {
             return cornersFor(index, isRtl)
+        }
+        if (_cornerMode == CornerMode.EACH_RUN && partialFills[index] != null) {
+            val roundsStart = index == 0 || !isDivisionEnabled(index - 1)
+            val roundsEnd = index == _divisions - 1
+            val left = if (isRtl) roundsEnd else roundsStart
+            val right = if (isRtl) roundsStart else roundsEnd
+            return (if (left) ROUND_LEFT else 0) or (if (right) ROUND_RIGHT else 0)
         }
         val roundsStart = _cornerMode == CornerMode.EACH_SEGMENT || index == 0
         val roundsEnd = _cornerMode == CornerMode.EACH_SEGMENT || index == _divisions - 1
@@ -1938,10 +1965,13 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
      * Draws the partial fill for division [index], if it has one.
      *
      * The fill covers the leading [getDivisionProgress] of the cell, RTL
-     * mirrored, and is clipped to the shape the cell would have as a standalone
-     * lit segment. The clip is what keeps every corner mode honest: without it,
-     * a fill approaching `1` under a large radius pokes its square cut edge out
-     * past the cell's rounded silhouette.
+     * mirrored, in the shape given by [partialCornersFor]. Under
+     * [CornerMode.EACH_RUN] that shape is exact and is drawn directly: the
+     * moving edge carries the run's rounded end, so no clip is needed, a fill
+     * approaching `1` lands exactly on the cell's silhouette. The other modes
+     * draw a straight-edged sweep clipped to the cell's standalone shape, which
+     * is what keeps them honest: without the clip, a fill approaching `1` under
+     * a large radius pokes its square cut edge out past the rounded silhouette.
      */
     private fun drawPartialFill(
         canvas: Canvas,
@@ -1954,9 +1984,34 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         if (partialFills.size() == 0) return
         val fill = partialFills[index] ?: return
 
-        // The clip: the whole cell, rounded as a standalone segment. Standalone
-        // rather than run-joined on purpose: a partial division is not part of
-        // the run beside it, so its fill reads as its own in-progress pill.
+        val baseColor = progressPaint.color
+        val divisionBase = if (divisionColors.indexOfKey(index) >= 0) {
+            divisionColors[index]
+        } else {
+            baseColor
+        }
+        val paintColor = recurringColorFor(index, divisionBase, now)
+
+        if (_cornerMode == CornerMode.EACH_RUN) {
+            if (!computeSpan(contentWidth, dividerSpan, index, isRtl, growFraction = fill)) return
+            if (progressPaint.color != paintColor) progressPaint.color = paintColor
+            val corners = partialCornersFor(index, isRtl)
+            drawSpan(
+                canvas = canvas,
+                left = spanLeft,
+                right = spanRight,
+                top = segmentBand.top,
+                height = segmentBand.height,
+                roundLeft = corners and ROUND_LEFT != 0,
+                roundRight = corners and ROUND_RIGHT != 0,
+                radius = segmentBand.radius,
+                paint = progressPaint,
+            )
+            if (progressPaint.color != baseColor) progressPaint.color = baseColor
+            return
+        }
+
+        // The clip: the whole cell, rounded as a standalone segment.
         if (!computeSpan(contentWidth, dividerSpan, index, isRtl)) return
         val corners = standaloneCornersFor(index, isRtl)
         setRadii(
@@ -1979,13 +2034,6 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         // out right for free.
         if (!computeSpan(contentWidth, dividerSpan, index, isRtl, growFraction = fill)) return
 
-        val baseColor = progressPaint.color
-        val divisionBase = if (divisionColors.indexOfKey(index) >= 0) {
-            divisionColors[index]
-        } else {
-            baseColor
-        }
-        val paintColor = recurringColorFor(index, divisionBase, now)
         if (progressPaint.color != paintColor) progressPaint.color = paintColor
 
         val saveCount = canvas.save()
@@ -2000,6 +2048,23 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         canvas.restoreToCount(saveCount)
 
         if (progressPaint.color != baseColor) progressPaint.color = baseColor
+    }
+
+    /**
+     * Which sides of the partial fill at [index] are rounded.
+     *
+     * Under [CornerMode.EACH_RUN] the fill continues the run beside it: the
+     * joint with a full division before it is square, and the moving edge
+     * always carries the run's rounded end. With nothing full before it, the
+     * fill is its own in-progress pill. The other modes use the standalone
+     * cell shape the fill is clipped to.
+     */
+    private fun partialCornersFor(index: Int, isRtl: Boolean): Int {
+        if (_cornerMode != CornerMode.EACH_RUN) return standaloneCornersFor(index, isRtl)
+        val roundsStart = index == 0 || !isDivisionEnabled(index - 1)
+        val left = if (isRtl) true else roundsStart
+        val right = if (isRtl) roundsStart else true
+        return (if (left) ROUND_LEFT else 0) or (if (right) ROUND_RIGHT else 0)
     }
 
     /**
@@ -2040,10 +2105,17 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
                 roundsEnd = true
             }
             CornerMode.EACH_RUN -> {
-                // An edge is rounded unless it butts up against another lit
-                // segment, which is what makes a run read as a single pill.
+                // An edge is rounded unless it butts up against another filled
+                // segment, which is what makes a run read as a single pill. A
+                // partial fill counts on the trailing side: the run flows
+                // squarely into the division that continues it, and the
+                // partial's moving edge carries the run's rounded end instead.
+                // It does not count on the leading side, because a fill below
+                // `1` never reaches the boundary, so the segment after it
+                // starts a fresh pill.
                 roundsStart = index == 0 || !isDivisionEnabled(index - 1)
-                roundsEnd = index == _divisions - 1 || !isDivisionEnabled(index + 1)
+                roundsEnd = index == _divisions - 1 ||
+                    !(isDivisionEnabled(index + 1) || partialFills[index + 1] != null)
             }
             CornerMode.BAR_ENDS -> {
                 roundsStart = index == 0
