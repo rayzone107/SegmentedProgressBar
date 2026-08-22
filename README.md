@@ -76,10 +76,10 @@ Then take whichever artifacts you need:
 ```kotlin
 dependencies {
     // The View. No Compose dependency.
-    implementation("com.github.rayzone107:segmentedprogressbar:2.0.0")
+    implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar:2.0.0")
 
     // Optional: the Jetpack Compose bindings.
-    implementation("com.github.rayzone107:segmentedprogressbar-compose:2.0.0")
+    implementation("com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar-compose:2.0.0")
 }
 ```
 
@@ -87,10 +87,23 @@ They are separate artifacts on purpose, so a View-only project never inherits th
 Compose runtime. The Compose artifact depends on the View one for the shared
 geometry and option types, so taking both never gives you two copies of anything.
 
+> [!IMPORTANT]
+> Mind the group: `com.github.rayzone107.SegmentedProgressBar`, with a **dot**
+> before the repository name, not `com.github.rayzone107:`. That is how JitPack
+> addresses a repository publishing more than one artifact.
+>
+> The shorter `com.github.rayzone107:segmentedprogressbar` does resolve, by
+> coincidence: JitPack reads the artifact id as a repository name, and this
+> repository happens to be called that. There is no repository named
+> `segmentedprogressbar-compose`, though, so the Compose artifact resolves only
+> under the dotted group. Use the dotted form for both and they stay consistent.
+> Both coordinates are listed on the
+> [JitPack build page](https://jitpack.io/#rayzone107/SegmentedProgressBar) for
+> each tag if you would rather copy them from there.
+
 > [!NOTE]
 > JitPack builds each tag on first request, so the very first resolve after a
-> release can take a minute. The exact coordinate for a tag is printed on that
-> tag's [JitPack build page](https://jitpack.io/#rayzone107/SegmentedProgressBar).
+> release takes a few minutes. Later resolves are served from its cache.
 
 ---
 
@@ -819,9 +832,13 @@ under R8 with no configuration on your side.
 Most code needs no changes. See [docs/MIGRATION.md](docs/MIGRATION.md) for the
 full list; the short version:
 
-- **The coordinate is `com.github.rayzone107:segmentedprogressbar`.** The 0.0.1
-  README told people to depend on `com.github.rayzone107:durationview`, which is a
-  different library of mine entirely.
+- **The coordinate changed**, to
+  `com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar`. The extra dot
+  is JitPack's addressing for a repository with more than one artifact, which this
+  one now is. Worth knowing either way: the 0.0.1 README told people to depend on
+  `com.github.rayzone107:durationview`, a different library of mine entirely, and
+  the tags that did build, `1.00` and `tag_v1`, no longer resolve at all, because
+  JitPack cannot build 2018 Gradle any more.
 - **`setBackgroundColor(int)` still works** but is deprecated, because it shadows
   `View.setBackgroundColor` with a different meaning. Use
   `setProgressBarBackgroundColor(int)` instead, the method the old README
