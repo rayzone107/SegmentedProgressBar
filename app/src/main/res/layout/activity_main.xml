@@ -171,7 +171,7 @@
             app:dividerWidth="4dp"
             app:divisions="5"
             app:progressBarBackgroundColor="#D9DDE3"
-            app:progressBarColor="#1B2733" />
+            app:progressBarColor="#2F6FED" />
 
         <!-- Per-division colours: a heatmap. -->
         <TextView
