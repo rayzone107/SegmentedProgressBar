@@ -107,5 +107,11 @@
              hold the lit set yourself and toggle it in an
              OnDivisionClickListener, or the two will cancel out. -->
         <attr name="spb_tapToToggle" format="boolean" />
+
+        <!-- Whether each division is exposed to accessibility services as its
+             own focusable, checkable node, with keyboard navigation on an
+             interactive bar. Off by default: one summary node reads better for
+             a passive indicator, per-division nodes for a control. -->
+        <attr name="spb_perDivisionAccessibility" format="boolean" />
     </declare-styleable>
 </resources>

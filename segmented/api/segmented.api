@@ -44,12 +44,15 @@ public final class com.rachitgoyal.segmented.SegmentGeometry {
 }
 public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view.View {
   protected android.os.Parcelable onSaveInstanceState();
+  protected boolean dispatchHoverEvent(android.view.MotionEvent);
   protected void onAttachedToWindow();
   protected void onDraw(android.graphics.Canvas);
+  protected void onFocusChanged(boolean, int, android.graphics.Rect);
   protected void onLayout(boolean, int, int, int, int);
   protected void onMeasure(int, int);
   protected void onRestoreInstanceState(android.os.Parcelable);
   protected void onVisibilityChanged(android.view.View, int);
+  public boolean dispatchKeyEvent(android.view.KeyEvent);
   public boolean onTouchEvent(android.view.MotionEvent);
   public boolean performClick();
   public com.rachitgoyal.segmented.SegmentedProgressBar(android.content.Context);
@@ -60,6 +63,7 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public final boolean hasDivisionColor(int);
   public final boolean isDividerEnabled();
   public final boolean isDivisionEnabled(int);
+  public final boolean isPerDivisionAccessibilityEnabled();
   public final boolean isTapToToggleEnabled();
   public final boolean toggleDivision(int);
   public final com.rachitgoyal.segmented.CornerMode getCornerMode();
@@ -112,6 +116,7 @@ public class com.rachitgoyal.segmented.SegmentedProgressBar extends android.view
   public final void setMaxHeight(int);
   public final void setMaxWidth(int);
   public final void setOnDivisionClickListener(com.rachitgoyal.segmented.SegmentedProgressBar$OnDivisionClickListener);
+  public final void setPerDivisionAccessibilityEnabled(boolean);
   public final void setProgressBarBackgroundColor(int);
   public final void setProgressBarColor(int);
   public final void setRecurringAnimation(com.rachitgoyal.segmented.RecurringAnimation);

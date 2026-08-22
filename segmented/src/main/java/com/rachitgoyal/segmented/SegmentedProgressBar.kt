@@ -11,9 +11,15 @@ import android.graphics.RectF
 import android.os.Parcel
 import android.os.Parcelable
 import android.util.AttributeSet
+import android.graphics.Rect
 import android.view.AbsSavedState
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.accessibility.AccessibilityEvent
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import androidx.customview.widget.ExploreByTouchHelper
 import android.view.ViewOutlineProvider
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.AccelerateDecelerateInterpolator
@@ -163,6 +169,9 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
 
     private var divisionClickListener: OnDivisionClickListener? = null
 
+    /** Installed while [isPerDivisionAccessibilityEnabled]; `null` otherwise. */
+    private var divisionTouchHelper: DivisionTouchHelper? = null
+
     /** Where the in-flight touch went down; `NaN` when there isn't one. */
     private var pendingTouchX = Float.NaN
 
@@ -188,6 +197,7 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
     private var _maxWidth: Int = NO_MAX_SIZE
     private var _maxHeight: Int = NO_MAX_SIZE
     private var _isTapToToggleEnabled: Boolean = false
+    private var _isPerDivisionAccessibilityEnabled: Boolean = false
 
     /**
      * The transition style currently governing segment fractions.
@@ -877,6 +887,12 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
                 R.styleable.SegmentedProgressBar_spb_tapToToggle,
                 false,
             )
+
+            _isPerDivisionAccessibilityEnabled = typedArray.getBoolean(
+                R.styleable.SegmentedProgressBar_spb_perDivisionAccessibility,
+                false,
+            )
+            if (_isPerDivisionAccessibilityEnabled) applyPerDivisionAccessibility()
             // Set directly rather than through updateInteractivity(), which also
             // clears both flags when nothing is interactive and would undo an
             // android:clickable in the same tag.
@@ -1151,6 +1167,48 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
             updateInteractivity()
         }
 
+    /**
+     * Whether each division is exposed to accessibility services as its own
+     * node.
+     *
+     * Off by default, or set from the `spb_perDivisionAccessibility` XML
+     * attribute; the default keeps the 2.0.0 behaviour, where the bar is a
+     * single node announcing "6 of 10 segments complete". Turning it on gives
+     * every division its own focusable, checkable node ("Segment 3 of 10",
+     * checked or not checked), which a screen reader can step through and,
+     * when the bar is interactive, toggle in place. It also enables keyboard
+     * use on an interactive bar: arrow keys move between divisions and Enter
+     * or the d-pad centre activates one, which is exactly the path that taps
+     * cannot serve, since an accessibility activation carries no coordinates.
+     *
+     * Activating a division behaves like tapping it: the division toggles if
+     * [isTapToToggleEnabled], and any [OnDivisionClickListener] is notified
+     * after. On a non-interactive bar the nodes are read-only state.
+     *
+     * Opt-in rather than always-on because it changes how the bar reads: one
+     * summary node is the right experience for a passive progress indicator,
+     * per-division nodes are the right experience for a control the user is
+     * expected to operate.
+     */
+    public var isPerDivisionAccessibilityEnabled: Boolean
+        get() = _isPerDivisionAccessibilityEnabled
+        set(value) {
+            if (_isPerDivisionAccessibilityEnabled == value) return
+            _isPerDivisionAccessibilityEnabled = value
+            applyPerDivisionAccessibility()
+        }
+
+    private fun applyPerDivisionAccessibility() {
+        if (_isPerDivisionAccessibilityEnabled) {
+            val helper = DivisionTouchHelper()
+            divisionTouchHelper = helper
+            ViewCompat.setAccessibilityDelegate(this, helper)
+        } else {
+            divisionTouchHelper = null
+            ViewCompat.setAccessibilityDelegate(this, null)
+        }
+    }
+
     /** Notified when the user taps an individual segment. */
     public fun interface OnDivisionClickListener {
         /**
@@ -1229,12 +1287,110 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         pendingTouchX = Float.NaN
 
         val index = if (touchX.isNaN()) NO_DIVISION else divisionAt(touchX)
-        if (index != NO_DIVISION) {
-            // Toggle first, so a listener sees the state the user is looking at.
-            if (_isTapToToggleEnabled) toggleDivision(index)
-            divisionClickListener?.onDivisionClick(this, index)
-        }
+        if (index != NO_DIVISION) activateDivision(index)
         return super.performClick()
+    }
+
+    /**
+     * What activating a division means, shared by taps and accessibility
+     * actions so the two can never drift apart.
+     */
+    private fun activateDivision(index: Int) {
+        // Toggle first, so a listener sees the state the user is looking at.
+        if (_isTapToToggleEnabled) toggleDivision(index)
+        divisionClickListener?.onDivisionClick(this, index)
+    }
+
+    // The three hooks ExploreByTouchHelper needs to see the world: hover for
+    // touch exploration, key events for arrow navigation, focus for keeping the
+    // virtual focus in step with input focus. All no-ops while the helper is
+    // absent, which is the default.
+
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean =
+        divisionTouchHelper?.dispatchHoverEvent(event) == true || super.dispatchHoverEvent(event)
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean =
+        divisionTouchHelper?.dispatchKeyEvent(event) == true || super.dispatchKeyEvent(event)
+
+    override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+        divisionTouchHelper?.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
+    }
+
+    /**
+     * The virtual accessibility hierarchy behind
+     * [isPerDivisionAccessibilityEnabled]: one checkable node per division.
+     *
+     * Bounds are the full-height cell, gaps included, so there are no dead
+     * zones between nodes while exploring by touch, matching how [divisionAt]
+     * maps taps. RTL is resolved to physical coordinates here because
+     * accessibility bounds are physical.
+     */
+    private inner class DivisionTouchHelper :
+        ExploreByTouchHelper(this@SegmentedProgressBar) {
+
+        override fun getVirtualViewAt(x: Float, y: Float): Int {
+            val index = divisionAt(x)
+            return if (index == NO_DIVISION) HOST_ID else index
+        }
+
+        override fun getVisibleVirtualViews(virtualViewIds: MutableList<Int>) {
+            for (index in 0 until _divisions) virtualViewIds.add(index)
+        }
+
+        override fun onPopulateNodeForVirtualView(
+            virtualViewId: Int,
+            node: AccessibilityNodeInfoCompat,
+        ) {
+            node.className = "android.widget.ToggleButton"
+            node.contentDescription = resources.getString(
+                R.string.segmented_progress_bar_division_description,
+                virtualViewId + 1,
+                _divisions,
+            )
+            node.isCheckable = true
+            node.isChecked = isDivisionEnabled(virtualViewId)
+
+            if (isClickable && isEnabled) {
+                node.addAction(AccessibilityNodeInfoCompat.ACTION_CLICK)
+                node.isClickable = true
+            }
+
+            node.setBoundsInParent(divisionBounds(virtualViewId))
+        }
+
+        override fun onPerformActionForVirtualView(
+            virtualViewId: Int,
+            action: Int,
+            arguments: android.os.Bundle?,
+        ): Boolean {
+            if (action != AccessibilityNodeInfoCompat.ACTION_CLICK) return false
+            if (!isClickable || !isEnabled) return false
+
+            activateDivision(virtualViewId)
+            invalidateVirtualView(virtualViewId)
+            sendEventForVirtualView(virtualViewId, AccessibilityEvent.TYPE_VIEW_CLICKED)
+            return true
+        }
+
+        private fun divisionBounds(index: Int): Rect {
+            val contentWidth = (width - paddingLeft - paddingRight).toFloat()
+            if (contentWidth <= 0f) return Rect(0, 0, 1, 1)
+
+            var start = SegmentGeometry.boundary(contentWidth, _divisions, index)
+            var end = SegmentGeometry.boundary(contentWidth, _divisions, index + 1)
+            if (layoutDirection == LAYOUT_DIRECTION_RTL) {
+                val mirrored = SegmentGeometry.mirror(contentWidth, end)
+                end = SegmentGeometry.mirror(contentWidth, start)
+                start = mirrored
+            }
+            return Rect(
+                paddingLeft + start.toInt(),
+                0,
+                paddingLeft + end.toInt(),
+                height,
+            )
+        }
     }
 
     /**
@@ -2202,6 +2358,9 @@ public open class SegmentedProgressBar @JvmOverloads public constructor(
         activeTransitionStyle = _segmentAnimation
         animDelay.fill(0L)
         syncAnimationTargets()
+        // The virtual accessibility tree mirrors divisions and their checked
+        // state, so any change here invalidates it wholesale.
+        divisionTouchHelper?.invalidateRoot()
         invalidate()
     }
 

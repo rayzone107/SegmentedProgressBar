@@ -8,6 +8,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -34,10 +35,16 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -102,6 +109,12 @@ import kotlinx.coroutines.launch
  * @param shimmerColor colour blended in at the peak of a shimmer sweep.
  * @param contentDescription accessibility label; a sensible one is generated when
  *   `null`.
+ * @param perSegmentAccessibility whether each segment is exposed to
+ *   accessibility services as its own focusable, checkable node ("Segment 3 of
+ *   10", on or off), which a screen reader steps through and, when
+ *   [onSegmentClick] is set, toggles in place. Off by default: one summary
+ *   node reads better for a passive indicator, per-segment nodes for a control
+ *   the user operates.
  * @param segmentColors per-segment overrides of [onColor], by index. The rule
  *   is one sentence: a colour here wins over [onColor] for its segment; every
  *   segment without one keeps using [onColor]. The override covers the
@@ -143,6 +156,7 @@ public fun SegmentedProgressBar(
     contentDescription: String? = null,
     segmentColors: Map<Int, Color> = emptyMap(),
     segmentProgress: Map<Int, Float> = emptyMap(),
+    perSegmentAccessibility: Boolean = false,
     onSegmentClick: ((Int) -> Unit)? = null,
 ) {
     require(divisions >= 1) { "divisions must be >= 1 but was $divisions" }
@@ -232,7 +246,72 @@ public fun SegmentedProgressBar(
                     isRtl = isRtl,
                 )
             },
-    )
+    ) {
+        if (perSegmentAccessibility) {
+            SegmentSemanticsOverlay(
+                divisions = divisions,
+                enabledSegments = enabledSegments,
+                onSegmentClick = onSegmentClick,
+            )
+        }
+    }
+}
+
+/**
+ * One invisible, zero-drawing child per segment, carrying that segment's
+ * semantics: the Compose counterpart of the View's virtual accessibility
+ * hierarchy.
+ *
+ * A [Layout] rather than offset boxes so each node's bounds are exactly its
+ * cell, gaps included, with no dead zones while exploring by touch. Placement
+ * uses `placeRelative`, so RTL mirroring matches the drawing for free.
+ */
+@Composable
+private fun BoxScope.SegmentSemanticsOverlay(
+    divisions: Int,
+    enabledSegments: Set<Int>,
+    onSegmentClick: ((Int) -> Unit)?,
+) {
+    Layout(
+        modifier = Modifier.matchParentSize(),
+        content = {
+            repeat(divisions) { index ->
+                Box(
+                    Modifier.semantics {
+                        contentDescription = "Segment ${index + 1} of $divisions"
+                        role = Role.Switch
+                        toggleableState = if (index in enabledSegments) {
+                            ToggleableState.On
+                        } else {
+                            ToggleableState.Off
+                        }
+                        if (onSegmentClick != null) {
+                            onClick {
+                                onSegmentClick(index)
+                                true
+                            }
+                        }
+                    },
+                )
+            }
+        },
+    ) { measurables, constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val placeables = measurables.mapIndexed { index, measurable ->
+            val start = SegmentGeometry.boundary(width.toFloat(), divisions, index).toInt()
+            val end = SegmentGeometry.boundary(width.toFloat(), divisions, index + 1).toInt()
+            measurable.measure(
+                androidx.compose.ui.unit.Constraints.fixed(
+                    (end - start).coerceAtLeast(0),
+                    height,
+                ),
+            ) to start
+        }
+        layout(width, height) {
+            placeables.forEach { (placeable, start) -> placeable.placeRelative(start, 0) }
+        }
+    }
 }
 
 /**

@@ -2,13 +2,18 @@
 <resources>
     <!--
       Names here are prefixed so they can never collide with, or be accidentally
-      overridden by, a consuming app's resources. This is the only string the
-      library ships; the previous `app_name` entry was removed because a library
-      has no business declaring one.
+      overridden by, a consuming app's resources. Only accessibility text lives
+      here; the previous `app_name` entry was removed because a library has no
+      business declaring one.
 
       A plural rather than a plain string: the grammatical number of "segments"
       is governed by the total, which differs per locale.
     -->
+    <!-- Announced for one division's node when per-division accessibility is
+         on: "Segment 3 of 10". Checked state is carried by the node itself, so
+         it is not part of the text. -->
+    <string name="segmented_progress_bar_division_description">Segment %1$d of %2$d</string>
+
     <plurals name="segmented_progress_bar_content_description">
         <item quantity="one">%1$d of %2$d segment complete</item>
         <item quantity="other">%1$d of %2$d segments complete</item>
