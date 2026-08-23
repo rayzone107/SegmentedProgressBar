@@ -23,6 +23,12 @@ Every image in this README is rendered by the library itself, from
 [`DocsScreenshotTest`](app/src/test/java/com/rachitgoyal/segmentedprogressbar/demo/DocsScreenshotTest.kt),
 so none of them can drift away from what the code actually draws.
 
+To try it before you depend on it, the demo app is attached to every release as
+`SegmentedProgressBar-demo-<version>.apk`:
+**[download the latest](https://github.com/rayzone107/SegmentedProgressBar/releases/latest)**.
+It has a [Playground tab](#building-from-source) with a live control for every
+option on this page.
+
 ---
 
 ## Contents
@@ -1058,6 +1064,11 @@ and read the resulting values off the screen. **Gallery** is a set of worked
 examples: a tappable bar, a declarative selection, a weekly habit tracker, gaps
 without divider lines, RTL, and each styling option on its own.
 
+Building it is optional: the same app is attached to every
+[release](https://github.com/rayzone107/SegmentedProgressBar/releases/latest) as
+a signed APK. It is not on Google Play, and
+[docs/PUBLISHING.md](docs/PUBLISHING.md) says why.
+
 Regenerating this README's images after a rendering change:
 
 ```bash
@@ -1070,11 +1081,15 @@ short version, once a maintainer's machine is set up:
 ```bash
 git tag 2.1.0 && git push origin 2.1.0                          # JitPack
 ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache   # Maven Central
+gh release create 2.1.0 --notes-file -                          # demo APK
 ```
 
 JitPack builds the tag on first request using [`jitpack.yml`](jitpack.yml), and
 publishes both artifacts from the one tag. Maven Central is published under
-`io.github.rayzone107`, signed, from the same build.
+`io.github.rayzone107`, signed, from the same build. Publishing the GitHub
+release triggers
+[`release-demo-apk.yml`](.github/workflows/release-demo-apk.yml), which builds
+the demo app from that tag, signs it and attaches it.
 
 ---
 

@@ -6,11 +6,20 @@ This library goes out through two channels from the same build:
 | --- | --- | --- |
 | Maven Central | `io.github.rayzone107:segmentedprogressbar` | One command from a maintainer's machine |
 | JitPack | `com.github.rayzone107.SegmentedProgressBar:segmentedprogressbar` | Automatic, on first request for a tag |
+| GitHub release | `SegmentedProgressBar-demo-<version>.apk` | Automatic, when the release is published |
 
 Maven Central is the channel to point consumers at: it needs no custom
 repository, and its artifacts are signed and immutable. JitPack stays because it
 costs nothing to keep and it is what versions 2.0.0 and 2.1.0 were published
 through.
+
+The third row is the demo app, not the library. It is **not on Google Play and
+should not be**: the developers who would install it arrive through Maven Central
+and the README rather than through store search, Play's Minimum Functionality
+policy explicitly targets demo and test builds, and a listing would drag in
+annual target API deadlines, a Data Safety declaration and a privacy policy for
+an app that exists to show a progress bar. Attaching the APK to the release costs
+nothing and expires never.
 
 The two do not interfere. The modules declare `io.github.rayzone107`, the
 namespace Central can verify, and JitPack re-serves whatever reaches the local
@@ -123,6 +132,92 @@ machine without a key can still run `publishToMavenLocal` to inspect what a
 release would contain. It cannot accidentally publish an unsigned release to
 Central: the Portal rejects those.
 
+### 4. The demo APK's signing key
+
+A separate key from the GPG one above, and used for a different thing: Android
+identifies an app by its signing certificate, so every release of the demo APK
+has to be signed with the *same* key or nobody can install a new one over the old
+one. It lives in GitHub Actions secrets, because
+[`release-demo-apk.yml`](../.github/workflows/release-demo-apk.yml) is what signs
+with it.
+
+None of the four values below is looked up from anywhere. The alias and the
+password are invented at this keyboard, and the other two are the file itself and
+that same password again.
+
+```bash
+# Generate it. 100 years, because a demo APK that expires is a support ticket for
+# no reason. -dname supplies the identity so keytool skips asking for a name, an
+# organisation and a city, none of which mean anything for this key.
+keytool -genkeypair -v -keystore demo-release.jks \
+  -alias demo -keyalg RSA -keysize 4096 -validity 36500 \
+  -dname "CN=SegmentedProgressBar Demo, O=rayzone107, C=US"
+```
+
+The only thing it asks for is a password, twice:
+
+```
+Enter keystore password:      <- invent one here
+Re-enter new password:
+```
+
+**There is no second, separate key password.** JDK 9 and later default to the
+PKCS12 keystore format, which has no per-key password distinct from the store
+password, so keytool never asks for one. Guides that show a third prompt
+(`Enter key password for <demo>`) predate that change. Gradle still reads two
+properties, so the same password goes into both secrets:
+
+```bash
+# The file, base64 encoded, because a GitHub secret holds text and not binary.
+base64 < demo-release.jks | gh secret set DEMO_KEYSTORE_BASE64
+
+# These three prompt for their value rather than taking it as an argument, which
+# keeps the password out of shell history.
+gh secret set DEMO_KEYSTORE_PASSWORD   # the password invented above
+gh secret set DEMO_KEY_ALIAS           # demo, the word after -alias
+gh secret set DEMO_KEY_PASSWORD        # the same password again
+
+gh secret list                         # names and dates only, never values
+```
+
+Writing a secret needs **admin** on the repository, so check `gh auth status`
+first: a `gh` signed in as some other account fails these with `HTTP 403`, and
+the read-only operations it can do give no warning that it will. The same four
+values can be typed into [the repository's Actions secrets
+page](https://github.com/rayzone107/SegmentedProgressBar/settings/secrets/actions)
+instead, which is often less trouble than juggling `gh auth switch`.
+
+Back the keystore up off this machine, and keep it out of the repository:
+`.gitignore` already covers `*.jks`, so it cannot be committed by accident.
+
+The certificate that key produces is this one. It is public, since it ships
+inside every APK signed with it, and it is the value to compare against when a
+release looks wrong:
+
+```
+CN=SegmentedProgressBar Demo, O=rayzone107, C=US
+SHA-256: c62c257cbb946101f891184383bc6cd7fb3c16c0c680ba2df98557542e6fd23a
+```
+
+Reading it back out of any APK, which is what the release workflow does:
+
+```bash
+$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1) \
+  verify --print-certs SegmentedProgressBar-demo-<version>.apk
+```
+
+**Losing this key is not fatal but it is permanent.** Generate a new one, and say
+in the release notes that the demo has to be uninstalled before the new build
+will install. That is the whole consequence, since nothing else trusts this
+certificate: it never touches Play, and it signs nothing that consumers link
+against.
+
+`app/build.gradle.kts` falls back to the debug key when these four properties are
+absent, which is what lets a developer machine and a pull request still run
+`assembleRelease` to check that shrinking works. That fallback must never reach a
+release, so the workflow refuses to start without the secrets and then verifies
+the certificate on the APK it built.
+
 ---
 
 ## Releasing a version
@@ -220,7 +315,21 @@ dependencies {
 ```
 
 - Update the install snippets in [`README.md`](../README.md) to the new version.
-- Write the GitHub release notes from the changelog entry.
+- Write the GitHub release notes from the changelog entry and publish the
+  release. **Publishing it is what builds and attaches the demo APK**, through
+  [`release-demo-apk.yml`](../.github/workflows/release-demo-apk.yml). It takes a
+  couple of minutes, after which `SegmentedProgressBar-demo-<version>.apk` is on
+  the release page:
+
+```bash
+gh run watch                                   # or read it in the Actions tab
+gh release view <version> --json assets --jq '.assets[].name'
+```
+
+The run's log prints the signing certificate's SHA-256. It should be
+`c62c257cbb946101f891184383bc6cd7fb3c16c0c680ba2df98557542e6fd23a` on **every**
+release; a different one means the key changed and existing installs will refuse
+the update.
 
 ---
 
@@ -245,3 +354,23 @@ the release.
 **The version was published with something wrong in it.** Publish the next
 patch version. Central does not allow overwriting or deleting a released
 version, and JitPack caches builds per tag.
+
+**The demo APK workflow failed on the missing-secrets check.** The four
+`DEMO_*` secrets are not set on the repository; step 4 of the one-time setup
+above adds them. The release itself is unaffected, so fix the secrets and re-run
+the workflow against the existing tag:
+
+```bash
+gh workflow run release-demo-apk.yml -f tag=<version>
+```
+
+**It failed on the tag check.** The tag was cut from a commit whose
+`VERSION_NAME` says something else, so the APK would have been labelled with a
+version nobody released. The library artifacts are fine, since they take their
+version from the same property; only the tag is wrong. Move the tag onto the
+right commit, or release the next patch version if the tag is already public.
+
+**The APK will not install over an older one.** `INSTALL_FAILED_UPDATE_INCOMPATIBLE`
+means the two builds were signed with different keys. Compare the certificate
+digest in the two workflow runs. If the key genuinely changed, there is no repair
+short of uninstalling the old build; say so in the release notes.

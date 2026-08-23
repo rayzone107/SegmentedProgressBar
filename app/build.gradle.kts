@@ -5,6 +5,29 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+// The demo app carries the library's own version, read from the same
+// gradle.properties entry the published AAR is cut from, so the APK attached to
+// a GitHub release cannot claim a version that release does not contain. The
+// release workflow additionally checks this against the tag it is building.
+val libraryVersion = providers.gradleProperty("VERSION_NAME").get()
+
+/**
+ * Derives a monotonic `versionCode` from a semantic version: 2.1.0 becomes
+ * 20100. Derived rather than hand-bumped, because a `versionCode` that has to be
+ * remembered is one that eventually ships stale.
+ */
+fun versionCodeOf(version: String): Int {
+    val parts = version.substringBefore('-').split('.').map {
+        it.toIntOrNull() ?: error("VERSION_NAME '$version' is not a semantic version")
+    }
+    require(parts.size == 3) { "VERSION_NAME '$version' must have three parts" }
+    val (major, minor, patch) = parts
+    require(minor < 100 && patch < 100) {
+        "VERSION_NAME '$version' overflows this scheme; minor and patch must stay below 100"
+    }
+    return major * 10_000 + minor * 100 + patch
+}
+
 android {
     namespace = "com.rachitgoyal.segmentedprogressbar.demo"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -13,8 +36,32 @@ android {
         applicationId = "com.rachitgoyal.segmentedprogressbar.demo"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 3
-        versionName = "2.1.0"
+        versionCode = versionCodeOf(libraryVersion)
+        versionName = libraryVersion
+    }
+
+    signingConfigs {
+        // The demo APK attached to each GitHub release is signed with a key held
+        // in repository secrets, so that one release installs over the previous
+        // one instead of failing with INSTALL_FAILED_UPDATE_INCOMPATIBLE. The
+        // key never lives in this repository; the release workflow writes it to
+        // a temporary file and passes these four properties in through
+        // ORG_GRADLE_PROJECT_ environment variables. See docs/PUBLISHING.md.
+        //
+        // They are absent on a developer machine and in pull request builds,
+        // where `assembleRelease` only needs to prove that shrinking works and
+        // the debug key is fine. That fallback must never reach a release, so
+        // the workflow refuses to run without the secrets and verifies the
+        // signing certificate of the APK it produced.
+        val keystore = providers.gradleProperty("demoKeystoreFile").orNull
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = providers.gradleProperty("demoKeystorePassword").orNull
+                keyAlias = providers.gradleProperty("demoKeyAlias").orNull
+                keyPassword = providers.gradleProperty("demoKeyPassword").orNull
+            }
+        }
     }
 
     buildTypes {
@@ -25,9 +72,8 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            // The demo app is not distributed; sign release builds with the debug
-            // key so `assembleRelease` verifies shrinking end to end in CI.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
         }
     }
 

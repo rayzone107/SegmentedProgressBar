@@ -4,6 +4,25 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Nothing in the library itself has changed; the entries below are about how it
+ships.
+
+### Added
+
+- **The demo app is attached to each GitHub release** as
+  `SegmentedProgressBar-demo-<version>.apk`, signed with a stable key so one
+  release installs over the last. Trying the Playground no longer means cloning
+  and building the repository. It is not on Google Play, and
+  [docs/PUBLISHING.md](docs/PUBLISHING.md) says why.
+
+### Changed
+
+- The demo app's `versionName` and `versionCode` are derived from `VERSION_NAME`
+  rather than hand-maintained, so a published APK cannot claim a version that
+  was never released.
+
 ## [2.1.0] - 2026-08-22
 
 Feature release. Everything is additive: code compiled against 2.0.0 keeps
